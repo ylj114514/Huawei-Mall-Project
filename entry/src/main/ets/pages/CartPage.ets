@@ -1,168 +1,148 @@
 import router from '@ohos.router'
-import { CartItem } from '../model/DataModel'
-import { CartService } from '../services/CartService'
+import { StorageManager } from '../utils/StorageManagerSimple'
+import { ProductModel } from '../model/ProductModel'
+import common from '@ohos.app.ability.common'
+
+// 颜色类
+class ColorPalette {
+  static primary: string = '#1A1A1A'
+  static text_primary: string = '#2C3E50'
+  static text_secondary: string = '#7F8C8D'
+  static white: string = '#FFFFFF'
+  static background: string = '#F5F7FA'
+  static price: string = '#FF3B30'
+  static error: string = '#E74C3C'
+}
+
+// 购物车项
+class CartItem {
+  product: ProductModel
+  quantity: number
+  spec: string
+
+  constructor(product: ProductModel, quantity: number = 1, spec: string = '标准版') {
+    this.product = product
+    this.quantity = quantity
+    this.spec = spec
+  }
+}
 
 @Entry
 @Component
 struct CartPage {
   @State cartItems: CartItem[] = []
-  @State allSelected: boolean = false
-  @State totalAmount: number = 0
-  @State selectedCount: number = 0
   @State isLoading: boolean = true
-  @State editingMode: boolean = false
-  @State refreshing: boolean = false
-  private cartService: CartService = CartService.getInstance()
+  @State totalAmount: number = 0
+  private storage: StorageManager = StorageManager.getInstance()
+  private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
 
   aboutToAppear() {
-    this.loadCartData()
+    this.initStorage()
+    this.loadCartItems()
   }
 
-  loadCartData() {
+  private async initStorage() {
     try {
-      this.isLoading = true
-      this.cartItems = this.cartService.getCartItems()
-      this.updateSummary()
+      await this.storage.init(this.context)
+    } catch (error) {
+      console.error('初始化存储失败:', error)
+    }
+  }
+
+  private async loadCartItems() {
+    try {
+      const savedCartItems = await this.storage.loadCart()
+      this.cartItems = savedCartItems.map(item => {
+        const product = new ProductModel(
+          item.productId || '',
+          item.name || '',
+          item.price || 0,
+          0,
+          '',
+          '',
+          [item.image || ''],
+          '',
+          [],
+          0,
+          0,
+          0
+        )
+        return new CartItem(product, item.quantity, item.spec || '标准版')
+      })
+      this.calculateTotal()
+    } catch (error) {
+      console.error('加载购物车失败:', error)
+    } finally {
       this.isLoading = false
-    } catch (error) {
-      console.error('加载购物车数据失败:', error)
-      this.isLoading = false
     }
   }
 
-  private updateSummary() {
-    this.allSelected = this.cartItems.length > 0 && this.cartItems.every(item => item.selected)
-    this.selectedCount = this.cartService.getSelectedCount()
-    this.totalAmount = this.cartService.getSelectedTotal()
+  private calculateTotal() {
+    this.totalAmount = this.cartItems.reduce((sum, item) => {
+      return sum + (item.product.price * item.quantity)
+    }, 0)
   }
 
-  // 切换商品选中状态
-  toggleItemSelection(item: CartItem) {
-    this.cartService.toggleSelected(item.id)
-    this.cartItems = this.cartService.getCartItems()
-    this.updateSummary()
-  }
+  private updateQuantity(item: CartItem, newQuantity: number) {
+    if (newQuantity <= 0) return
 
-  // 全选/全不选
-  toggleAllSelection() {
-    this.cartService.toggleAllSelected(!this.allSelected)
-    this.cartItems = this.cartService.getCartItems()
-    this.updateSummary()
-  }
+    const index = this.cartItems.findIndex(cartItem =>
+      cartItem.product.id === item.product.id && cartItem.spec === item.spec
+    )
 
-  // 更新商品数量
-  async updateItemQuantity(item: CartItem, quantity: number) {
-    try {
-      const success = await this.cartService.updateQuantity(item.id, quantity)
-      if (success) {
-        this.cartItems = this.cartService.getCartItems()
-        this.updateSummary()
-      } else {
-        // 显示错误提示
-        console.error('更新数量失败，可能库存不足')
-      }
-    } catch (error) {
-      console.error('更新数量失败:', error)
+    if (index !== -1) {
+      this.cartItems[index].quantity = newQuantity
+      this.calculateTotal()
+      // TODO: 更新到存储
     }
   }
 
-  // 删除商品
-  removeItem(item: CartItem) {
-    // 这里可以添加确认对话框
-    this.cartService.removeFromCart(item.id)
-    this.cartItems = this.cartService.getCartItems()
-    this.updateSummary()
-  }
+  private removeItem(item: CartItem) {
+    const index = this.cartItems.findIndex(cartItem =>
+      cartItem.product.id === item.product.id && cartItem.spec === item.spec
+    )
 
-  // 批量删除选中商品
-  removeSelectedItems() {
-    // 这里可以添加确认对话框
-    for (const item of this.cartItems) {
-      if (item.selected) {
-        this.cartService.removeFromCart(item.id)
-      }
+    if (index !== -1) {
+      this.cartItems.splice(index, 1)
+      this.calculateTotal()
+      // TODO: 更新到存储
     }
-    this.cartItems = this.cartService.getCartItems()
-    this.updateSummary()
-  }
-
-  // 清空购物车
-  clearCart() {
-    this.cartService.clearCart()
-    this.cartItems = []
-    this.updateSummary()
-  }
-
-  // 结算
-  checkout() {
-    if (!this.cartService.hasSelectedItems()) {
-      console.error('请选择要结算的商品')
-      return
-    }
-
-    try {
-      // 这里可以跳转到结算页面
-      console.log('结算商品数量:', this.selectedCount)
-      console.log('结算总金额:', this.totalAmount)
-
-      // 清空选中的商品
-      this.cartService.clearSelected()
-      this.cartItems = this.cartService.getCartItems()
-      this.updateSummary()
-
-      console.log('结算成功')
-    } catch (error) {
-      console.error('结算失败:', error)
-    }
-  }
-
-  // 刷新购物车
-  refresh() {
-    this.refreshing = true
-    this.cartItems = this.cartService.getCartItems()
-    this.updateSummary()
-    setTimeout(() => {
-      this.refreshing = false
-    }, 1000)
   }
 
   build() {
     Column() {
       // 顶部导航栏
       Row() {
-        Button('←')
-          .width(40)
-          .height(40)
-          .backgroundColor(Color.Transparent)
-          .fontColor($r('app.color.text_primary'))
-          .onClick(() => {
-            router.back()
-          })
+        Button() {
+          Text('←')
+            .fontSize(24)
+            .fontColor(ColorPalette.text_primary)
+        }
+        .width(60)
+        .height(48)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          router.back()
+        })
 
         Text('购物车')
-          .fontSize(18)
+          .fontSize(20)
           .fontWeight(FontWeight.Medium)
+          .fontColor(ColorPalette.text_primary)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
 
-        if (this.cartItems.length > 0) {
-          Button('编辑')
-            .height(40)
-            .backgroundColor(Color.Transparent)
-            .fontColor($r('app.color.primary'))
-            .onClick(() => {
-              this.editingMode = !this.editingMode
-            })
-        } else {
-          Blank().width(40)
-        }
+        Text('管理')
+          .fontSize(16)
+          .fontColor(ColorPalette.primary)
+          .width(60)
+          .textAlign(TextAlign.End)
+          .visibility(this.cartItems.length > 0 ? Visibility.Visible : Visibility.Hidden)
       }
       .width('100%')
-      .height(56)
       .padding({ left: 16, right: 16 })
-      .justifyContent(FlexAlign.SpaceBetween)
-      .alignItems(VerticalAlign.Center)
-      .backgroundColor($r('app.color.white'))
+      .height(56)
+      .backgroundColor(ColorPalette.white)
 
       if (this.isLoading) {
         // 加载状态
@@ -170,9 +150,9 @@ struct CartPage {
           LoadingProgress()
             .width(40)
             .height(40)
-          Text('加载购物车中...')
+          Text('加载中...')
             .fontSize(14)
-            .fontColor($r('app.color.text_secondary'))
+            .fontColor(ColorPalette.text_secondary)
             .margin({ top: 16 })
         }
         .width('100%')
@@ -187,214 +167,179 @@ struct CartPage {
           Text('购物车是空的')
             .fontSize(18)
             .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_secondary'))
+            .fontColor(ColorPalette.text_secondary)
             .margin({ bottom: 12 })
           Text('快去挑选心仪的商品吧')
             .fontSize(14)
-            .fontColor($r('app.color.text_secondary'))
+            .fontColor(ColorPalette.text_secondary)
             .margin({ bottom: 32 })
 
           Button('去购物')
-            .height(44)
-            .padding({ left: 32, right: 32 })
-            .backgroundColor($r('app.color.primary'))
+            .fontSize(16)
+            .fontColor(Color.White)
+            .backgroundColor(ColorPalette.primary)
+            .padding({ left: 32, right: 32, top: 12, bottom: 12 })
+            .borderRadius(24)
             .onClick(() => {
-              router.replaceUrl({ url: 'pages/Index' })
+              router.back()
             })
         }
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
+        .backgroundColor(ColorPalette.background)
       } else {
         // 购物车商品列表
-        List() {
-          ForEach(this.cartItems, (item: CartItem) => {
-            ListItem() {
+        Scroll() {
+          Column() {
+            ForEach(this.cartItems, (item: CartItem, index?: number) => {
               Row() {
-                // 选择框
-                Button() {
-                  Circle({ width: 20, height: 20 })
-                    .fill(item.selected ? $r('app.color.primary') : Color.Transparent)
-                    .stroke(item.selected ? Color.Transparent : $r('app.color.text_secondary'))
-                    .strokeWidth(2)
-                    .margin({ right: 12 })
-                }
-                .backgroundColor(Color.Transparent)
-                .onClick(() => this.toggleItemSelection(item))
-
                 // 商品图片
                 Image(item.product.image)
-                  .width(80)
-                  .height(80)
+                  .width(100)
+                  .height(100)
                   .borderRadius(8)
-                  .objectFit(ImageFit.Cover)
-                  .backgroundColor($r('app.color.background'))
-                  .margin({ right: 12 })
+                  .objectFit(ImageFit.Contain)
+                  .backgroundColor('#F8F9FA')
+                  .margin({ right: 16 })
 
                 // 商品信息
                 Column() {
                   Text(item.product.name)
-                    .fontSize(14)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor($r('app.color.text_primary'))
+                    .fontSize(16)
+                    .fontColor(ColorPalette.text_primary)
                     .maxLines(2)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .width('100%')
 
-                  Text(item.product.spec)
-                    .fontSize(12)
-                    .fontColor($r('app.color.text_secondary'))
+                  Text(`规格：${item.spec}`)
+                    .fontSize(14)
+                    .fontColor(ColorPalette.text_secondary)
                     .margin({ top: 4 })
 
                   Row() {
                     Text(`¥${item.product.price}`)
-                      .fontSize(16)
+                      .fontSize(18)
                       .fontWeight(FontWeight.Bold)
-                      .fontColor($r('app.color.price'))
-
-                    if (item.product.originalPrice > item.product.price) {
-                      Text(`¥${item.product.originalPrice}`)
-                        .fontSize(12)
-                        .fontColor($r('app.color.text_secondary'))
-                        .decoration({ type: TextDecorationType.LineThrough })
-                        .margin({ left: 8 })
-                    }
+                      .fontColor(ColorPalette.price)
                   }
                   .width('100%')
-                  .justifyContent(FlexAlign.Start)
-                  .alignItems(VerticalAlign.Bottom)
                   .margin({ top: 8 })
                 }
                 .layoutWeight(1)
                 .alignItems(HorizontalAlign.Start)
 
-                // 数量选择器
-                if (!this.editingMode) {
-                  Column() {
-                    Row() {
-                      Button('-')
-                        .width(28)
-                        .height(28)
-                        .fontSize(14)
-                        .backgroundColor($r('app.color.background'))
-                        .fontColor(item.quantity > 1 ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
-                        .enabled(item.quantity > 1)
-                        .onClick(() => this.updateItemQuantity(item, item.quantity - 1))
+                // 数量调整和删除
+                Column() {
+                  // 数量调整
+                  Row() {
+                    Button('-')
+                      .width(32)
+                      .height(32)
+                      .fontSize(16)
+                      .backgroundColor('#F0F0F0')
+                      .fontColor(item.quantity > 1 ? ColorPalette.text_primary : ColorPalette.text_secondary)
+                      .enabled(item.quantity > 1)
+                      .onClick(() => {
+                        this.updateQuantity(item, item.quantity - 1)
+                      })
 
-                      Text(item.quantity.toString())
-                        .fontSize(14)
-                        .fontColor($r('app.color.text_primary'))
-                        .width(32)
-                        .textAlign(TextAlign.Center)
+                    Text(item.quantity.toString())
+                      .fontSize(16)
+                      .fontColor(ColorPalette.text_primary)
+                      .width(40)
+                      .textAlign(TextAlign.Center)
 
-                      Button('+')
-                        .width(28)
-                        .height(28)
-                        .fontSize(14)
-                        .backgroundColor($r('app.color.background'))
-                        .fontColor(item.quantity < item.product.stock ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
-                        .enabled(item.quantity < item.product.stock)
-                        .onClick(() => this.updateItemQuantity(item, item.quantity + 1))
-                    }
-                    .margin({ top: 8 })
+                    Button('+')
+                      .width(32)
+                      .height(32)
+                      .fontSize(16)
+                      .backgroundColor('#F0F0F0')
+                      .fontColor(ColorPalette.text_primary)
+                      .onClick(() => {
+                        this.updateQuantity(item, item.quantity + 1)
+                      })
                   }
+                  .margin({ bottom: 12 })
 
                   // 删除按钮
-                  if (this.editingMode) {
-                    Button('删除')
-                      .height(32)
-                      .fontSize(12)
-                      .backgroundColor($r('app.color.error'))
-                      .fontColor(Color.White)
-                      .margin({ top: 8 })
-                      .onClick(() => this.removeItem(item))
-                  }
+                  Button('删除')
+                    .fontSize(12)
+                    .fontColor(ColorPalette.error)
+                    .backgroundColor(Color.Transparent)
+                    .border({ width: 1, color: ColorPalette.error })
+                    .onClick(() => {
+                      this.removeItem(item)
+                    })
                 }
+                .justifyContent(FlexAlign.SpaceBetween)
+                .height('100%')
               }
               .width('100%')
               .padding(16)
-              .backgroundColor($r('app.color.white'))
+              .backgroundColor(ColorPalette.white)
               .borderRadius(8)
               .margin({ left: 16, right: 16, bottom: 8 })
-            }
-          })
+            })
+          }
+          .width('100%')
+          .padding({ top: 16, bottom: 120 })
         }
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor($r('app.color.background'))
+        .backgroundColor(ColorPalette.background)
+      }
 
-        // 底部操作栏
-        Column() {
-          // 全选和删除
-          Row() {
-            Button() {
-              Row() {
-                Circle({ width: 20, height: 20 })
-                  .fill(this.allSelected ? $r('app.color.primary') : Color.Transparent)
-                  .stroke(this.allSelected ? Color.Transparent : $r('app.color.text_secondary'))
-                  .strokeWidth(2)
-                  .margin({ right: 8 })
-                Text('全选')
-                  .fontSize(14)
-                  .fontColor($r('app.color.text_primary'))
-              }
-            }
-            .backgroundColor(Color.Transparent)
-            .onClick(() => this.toggleAllSelection())
-
-            Blank()
-
-            if (this.editingMode) {
-              Button('删除选中')
-                .height(36)
+      // 底部结算栏
+      if (this.cartItems.length > 0) {
+        Row() {
+          Column() {
+            Row() {
+              Text('合计：')
                 .fontSize(14)
-                .backgroundColor($r('app.color.error'))
-                .enabled(this.selectedCount > 0)
-                .onClick(() => this.removeSelectedItems())
-            } else {
-              Column() {
-                Row() {
-                  Text(`合计: `)
-                    .fontSize(14)
-                    .fontColor($r('app.color.text_secondary'))
-                  Text(`¥${this.totalAmount.toFixed(2)}`)
-                    .fontSize(18)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor($r('app.color.price'))
-                }
-                Text(`已选${this.selectedCount}件商品`)
-                  .fontSize(12)
-                  .fontColor($r('app.color.text_secondary'))
-              }
-              .alignItems(HorizontalAlign.End)
-
-              Button('结算')
-                .height(44)
-                .fontSize(16)
-                .backgroundColor($r('app.color.primary'))
-                .padding({ left: 24, right: 24 })
-                .margin({ left: 16 })
-                .enabled(this.selectedCount > 0)
-                .onClick(() => this.checkout())
+                .fontColor(ColorPalette.text_secondary)
+              Text(`¥${this.totalAmount.toFixed(2)}`)
+                .fontSize(20)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(ColorPalette.price)
             }
+            Text(`共${this.cartItems.length}件商品`)
+              .fontSize(12)
+              .fontColor(ColorPalette.text_secondary)
+              .margin({ top: 4 })
           }
-          .width('100%')
-          .height(60)
-          .padding({ left: 16, right: 16 })
-          .backgroundColor($r('app.color.white'))
-          .shadow({
-            radius: 4,
-            color: '#1A000000',
-            offsetX: 0,
-            offsetY: -2
-          })
-          .justifyContent(FlexAlign.SpaceBetween)
-          .alignItems(VerticalAlign.Center)
+          .alignItems(HorizontalAlign.End)
+
+          Button('结算')
+            .fontSize(16)
+            .fontColor(Color.White)
+            .backgroundColor(ColorPalette.primary)
+            .width(100)
+            .height(44)
+            .borderRadius(22)
+            .margin({ left: 20 })
+            .onClick(() => {
+              console.log('结算')
+              // TODO: 实现结算逻辑
+            })
         }
+        .width('100%')
+        .padding({ left: 20, right: 20 })
+        .height(80)
+        .backgroundColor(ColorPalette.white)
+        .justifyContent(FlexAlign.SpaceBetween)
+        .alignItems(VerticalAlign.Center)
+        .shadow({
+          radius: 4,
+          color: 'rgba(0,0,0,0.1)',
+          offsetX: 0,
+          offsetY: -2
+        })
+        .position({ x: 0, y: '100%' })
+        .translate({ y: -80 })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.background'))
+    .backgroundColor(ColorPalette.background)
   }
 }

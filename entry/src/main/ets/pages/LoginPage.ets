@@ -1,6 +1,7 @@
 import router from '@ohos.router'
 import { User } from '../model/DataModel'
 import { StorageManager } from '../utils/StorageManager'
+import common from '@ohos.app.ability.common'
 
 @Entry
 @Component
@@ -12,6 +13,20 @@ struct LoginPage {
   @State isLoading: boolean = false
   @State showUnregisteredDialog: boolean = false
   private storage: StorageManager = StorageManager.getInstance()
+  private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
+
+  aboutToAppear() {
+    this.initStorage()
+  }
+
+  private async initStorage() {
+    try {
+      await this.storage.init(this.context)
+      console.log('StorageManager初始化成功')
+    } catch (error) {
+      console.error('StorageManager初始化失败:', error)
+    }
+  }
 
   // 验证账号格式
   private validateAccount(account: string): boolean {
@@ -45,7 +60,7 @@ struct LoginPage {
         // 登录成功
         await this.storage.saveUser(existingUser)
         console.log('登录成功:', existingUser.username)
-        router.replaceUrl({ url: 'pages/UserCenterPage' })
+        router.replaceUrl({ url: 'pages/IndexLuxury' })
       } else if (existingUser) {
         console.error('密码错误')
       } else {
@@ -61,6 +76,8 @@ struct LoginPage {
 
   // 注册
   private async register(): Promise<void> {
+    console.log('开始注册，账号:', this.account)
+
     if (!this.validateAccount(this.account)) {
       console.error('请输入正确的账号格式（至少3位，只能包含字母、数字、下划线）')
       return
@@ -80,16 +97,20 @@ struct LoginPage {
 
     try {
       // 检查账号是否已注册
+      console.log('检查账号是否已存在...')
       const existingUser = await this.loadUserByAccount(this.account)
 
       if (existingUser) {
         console.error('该账号已注册')
       } else {
         // 创建新用户
+        console.log('创建新用户...')
         const newUser = new User(this.account, this.password)
+        // 设置默认用户名
+        newUser.username = this.account
         await this.storage.saveUser(newUser)
         console.log('注册成功:', newUser.username)
-        router.replaceUrl({ url: 'pages/UserCenterPage' })
+        router.replaceUrl({ url: 'pages/IndexSimple' })
       }
     } catch (error) {
       console.error('注册失败:', error)
@@ -150,7 +171,7 @@ struct LoginPage {
             .backgroundColor(Color.Transparent)
             .fontColor($r('app.color.text_primary'))
             .onClick(() => {
-              router.replaceUrl({url:'pages/Index'})
+              router.replaceUrl({url:'pages/IndexLuxury'})
             })
 
           Text(this.isLoginMode ? '登录' : '注册')

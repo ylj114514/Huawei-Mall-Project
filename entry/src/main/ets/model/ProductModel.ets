@@ -13,6 +13,9 @@ export class ProductModel {
   rating: number
   reviewCount: number
   stock: number
+  sales: number
+  isNew: boolean
+  status: string
   width: number = 0 // 用于瀑布流布局计算
 
   constructor(id: string, name: string, price: number, originalPrice: number,
@@ -32,6 +35,9 @@ export class ProductModel {
     this.rating = rating
     this.reviewCount = reviewCount
     this.stock = stock
+    this.sales = 0
+    this.isNew = false
+    this.status = 'active'
   }
 }
 

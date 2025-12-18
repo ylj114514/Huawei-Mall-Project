@@ -275,6 +275,37 @@ struct UserCenterPageSimple {
               .padding(16)
               .justifyContent(FlexAlign.Start)
               .onClick(() => this.navigateToPage('pages/AddressManagePage'))
+
+              Divider()
+                .width('100%')
+                .margin({ left: 16, right: 16 })
+
+              Row() {
+                Text('⚙️')
+                  .fontSize(20)
+                  .margin({ right: 12 })
+
+                Column() {
+                  Text('管理员后台')
+                    .fontSize(14)
+                    .fontColor($r('app.color.text_primary'))
+                    .width('100%')
+                  Text('商品管理')
+                    .fontSize(12)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                    .margin({ top: 2 })
+                }
+                .layoutWeight(1)
+
+                Text('>')
+                  .fontSize(16)
+                  .fontColor($r('app.color.text_secondary'))
+              }
+              .width('100%')
+              .padding(16)
+              .justifyContent(FlexAlign.Start)
+              .onClick(() => this.navigateToPage('pages/AdminDashboard'))
             }
             .width('100%')
             .backgroundColor($r('app.color.white'))

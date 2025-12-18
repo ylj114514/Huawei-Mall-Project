@@ -131,6 +131,7 @@ export class StorageManager {
     this.ensureInitialized()
     try {
       if (user) {
+        console.log('StorageManager: 开始保存用户', user.account)
         // 将用户保存到用户列表中
         await this.addUserToList(user)
         // 同时设置为当前登录用户
@@ -145,14 +146,14 @@ export class StorageManager {
         })
         await this.preferences!.put('current_user', userJson)
         await this.preferences!.flush()
-        console.log('用户信息已保存到数据库')
+        console.log('StorageManager: 用户信息已保存到数据库', user.account)
       } else {
         await this.preferences!.delete('current_user')
         await this.preferences!.flush()
         console.log('用户信息已从数据库删除')
       }
     } catch (error) {
-      console.error('保存用户信息失败:', error)
+      console.error('StorageManager: 保存用户信息失败:', error)
       throw new Error('保存用户信息失败')
     }
   }
@@ -501,6 +502,13 @@ export class StorageManager {
       console.error('加载搜索历史失败:', error)
       return []
     }
+  }
+
+  /**
+   * 获取搜索历史（同步方法，用于组件初始化）
+   */
+  public async getSearchHistory(): Promise<string[]> {
+    return await this.loadSearchHistory()
   }
 
   // =================== 应用设置管理 ===================
