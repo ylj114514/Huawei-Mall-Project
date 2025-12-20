@@ -28,7 +28,7 @@ export class ProductModel {
     this.description = description
     this.detailDescription = detailDescription
     this.images = images
-    this.image = images.length > 0 ? images[0] : $r('app.media.startIcon') // 默认使用第一张图作为主图
+    this.image = images.length > 0 ? images[0] : $r('app.media.APP') // 默认使用第一张图作为主图
     this.spec = '标准版' // 默认规格
     this.category = category
     this.tags = tags

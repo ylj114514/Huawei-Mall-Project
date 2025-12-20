@@ -11,22 +11,24 @@ interface ColorScheme {
   cardBg: string
   gold: string
   shadow: string
-  darkBg: string
-  yellowCard: string
-  yellowCardText: string
+  headerBg: string
+  headerBgLight: string
+  textLight: string
+  textSecondary: string
 }
 
 const COLORS: ColorScheme = {
-  background: '#F5F5F5',
-  primary: '#000000',
-  accent: '#CF0A2C',
-  secondary: '#666666',
+  background: '#F8F9FA',
+  primary: '#1976D2',
+  accent: '#FF4081',
+  secondary: '#424242',
   cardBg: '#FFFFFF',
-  gold: '#D4AF37',
-  shadow: 'rgba(0, 0, 0, 0.08)',
-  darkBg: '#2F2F2F',
-  yellowCard: '#FFD700',
-  yellowCardText: '#8B6914'
+  gold: '#FFB300',
+  shadow: 'rgba(0, 0, 0, 0.1)',
+  headerBg: '#1976D2',
+  headerBgLight: '#42A5F5',
+  textLight: '#FFFFFF',
+  textSecondary: '#757575'
 }
 
 @Entry
@@ -35,6 +37,12 @@ struct UserCenter {
   @State user: User | null = null
   @State orderCount: number = 5
   @State couponCount: number = 8
+  @State orders: { status: string, icon: string, count: number }[] = [
+    { status: '待付款', icon: '💳', count: 2 },
+    { status: '待发货', icon: '📦', count: 1 },
+    { status: '待收货', icon: '🚚', count: 3 },
+    { status: '退换/售后', icon: '🔄', count: 0 }
+  ]
   private storage: StorageManager = StorageManager.getInstance()
   private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
 
@@ -55,6 +63,13 @@ struct UserCenter {
   private async loadUserData() {
     try {
       this.user = await this.storage.loadUser()
+      // 模拟加载订单数据
+      this.orders = [
+        { status: '待付款', icon: '💳', count: Math.floor(Math.random() * 5) },
+        { status: '待发货', icon: '📦', count: Math.floor(Math.random() * 3) },
+        { status: '待收货', icon: '🚚', count: Math.floor(Math.random() * 4) },
+        { status: '退换/售后', icon: '🔄', count: Math.floor(Math.random() * 2) }
+      ]
     } catch (error) {
       console.error('加载用户数据失败:', error)
     }
@@ -76,7 +91,7 @@ struct UserCenter {
   @Builder
   HeaderSection() {
     Column() {
-      // 顶部深色背景区域
+      // 顶部渐变背景区域
       Column() {
         // 返回按钮和设置
         Row() {
@@ -100,13 +115,29 @@ struct UserCenter {
             .textAlign(TextAlign.Center)
 
           Row() {
-            Text('•••')
-              .fontSize(24)
-              .fontColor(Color.White)
-              .margin({ right: 20 })
-            Text('🔍')
-              .fontSize(24)
-              .fontColor(Color.White)
+            Button() {
+              Text('•••')
+                .fontSize(24)
+                .fontColor(Color.White)
+            }
+            .width(48)
+            .height(48)
+            .backgroundColor(Color.Transparent)
+            .margin({ right: 16 })
+            .onClick(() => {
+              // 设置功能
+            })
+            Button() {
+              Text('🔍')
+                .fontSize(24)
+                .fontColor(Color.White)
+            }
+            .width(48)
+            .height(48)
+            .backgroundColor(Color.Transparent)
+            .onClick(() => {
+              // 搜索功能
+            })
           }
         }
         .width('100%')
@@ -115,26 +146,44 @@ struct UserCenter {
         // 用户信息
         Row() {
           // 头像
-          Text(this.user ? this.user.username[0].toUpperCase() : 'i')
+          Text(this.user ? this.user.username[0].toUpperCase() : 'U')
             .fontSize(36)
-            .fontColor('#FF7F50')
-            .fontWeight(FontWeight.Bold)
+            .fontColor(COLORS.accent)
             .width(80)
             .height(80)
             .backgroundColor(Color.White)
             .borderRadius(40)
             .textAlign(TextAlign.Center)
+            .lineHeight(80)
+            .shadow({
+              radius: 8,
+              color: 'rgba(0, 0, 0, 0.15)',
+              offsetX: 0,
+              offsetY: 4
+            })
 
           Column() {
-            Text(this.user ? '点击登录' : '点击登录')
+            Text(this.user ? this.user.username : '未登录')
               .fontSize(24)
               .fontWeight(FontWeight.Bold)
-              .fontColor(Color.White)
+              .fontColor(COLORS.textLight)
               .margin({ bottom: 4 })
 
-            Text(this.user ? this.user.username : '登录更精彩')
-              .fontSize(14)
-              .fontColor('#CCCCCC')
+            if (!this.user) {
+              Button('去登录')
+                .fontSize(14)
+                .fontColor(COLORS.textLight)
+                .backgroundColor('rgba(255, 255, 255, 0.2)')
+                .borderRadius(16)
+                .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+                .onClick(() => {
+                  router.pushUrl({ url: 'pages/LoginPageModern' })
+                })
+            } else {
+              Text(this.user.phone || '')
+                .fontSize(14)
+                .fontColor('rgba(255, 255, 255, 0.8)')
+            }
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
@@ -143,61 +192,88 @@ struct UserCenter {
         .width('100%')
         .padding({ left: 20, right: 20, bottom: 20 })
 
-        // 礼券和收益卡片
+        // 统计卡片区域
         Row() {
-          // 礼券余额
+          // 待付款订单
           Column() {
-            Text('礼券余额')
-              .fontSize(14)
-              .fontColor(COLORS.yellowCardText)
-              .margin({ bottom: 8 })
-            Text('0')
-              .fontSize(24)
+            Text(this.orders[0].count.toString())
+              .fontSize(28)
               .fontWeight(FontWeight.Bold)
-              .fontColor(COLORS.yellowCardText)
-              .margin({ bottom: 16 })
-            Button('立即查看')
+              .fontColor(COLORS.accent)
+              .margin({ bottom: 4 })
+            Text('待付款')
               .fontSize(14)
-              .fontColor(COLORS.yellowCardText)
-              .backgroundColor('#FFFFFF')
-              .borderRadius(20)
-              .padding({ left: 20, right: 20, top: 6, bottom: 6 })
+              .fontColor(COLORS.textLight)
+              .opacity(0.9)
           }
-          .width('50%')
-          .height(120)
-          .padding(20)
-          .backgroundColor(COLORS.yellowCard)
-          .borderRadius({ topLeft: 12, bottomLeft: 12 })
+          .width('25%')
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onNavigate('pages/OrderListPage?status=unpaid')
+          })
 
-          // 收益余额
+          // 待发货订单
           Column() {
-            Text('收益余额 (元)')
-              .fontSize(14)
-              .fontColor(COLORS.yellowCardText)
-              .margin({ bottom: 8 })
-            Text('0')
-              .fontSize(24)
+            Text(this.orders[1].count.toString())
+              .fontSize(28)
               .fontWeight(FontWeight.Bold)
-              .fontColor(COLORS.yellowCardText)
-              .margin({ bottom: 16 })
-            Button('立即提现')
+              .fontColor(COLORS.accent)
+              .margin({ bottom: 4 })
+            Text('待发货')
               .fontSize(14)
-              .fontColor(COLORS.yellowCardText)
-              .backgroundColor('#FFFFFF')
-              .borderRadius(20)
-              .padding({ left: 20, right: 20, top: 6, bottom: 6 })
+              .fontColor(COLORS.textLight)
+              .opacity(0.9)
           }
-          .width('50%')
-          .height(120)
-          .padding(20)
-          .backgroundColor(COLORS.yellowCard)
-          .borderRadius({ topRight: 12, bottomRight: 12 })
+          .width('25%')
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onNavigate('pages/OrderListPage?status=shipping')
+          })
+
+          // 待收货订单
+          Column() {
+            Text(this.orders[2].count.toString())
+              .fontSize(28)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(COLORS.accent)
+              .margin({ bottom: 4 })
+            Text('待收货')
+              .fontSize(14)
+              .fontColor(COLORS.textLight)
+              .opacity(0.9)
+          }
+          .width('25%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onNavigate('pages/OrderListPage?status=delivering')
+          })
+
+          // 待评价订单
+          Column() {
+            Text(this.orders[3].count.toString())
+              .fontSize(28)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(COLORS.accent)
+              .margin({ bottom: 4 })
+            Text('待评价')
+              .fontSize(14)
+              .fontColor(COLORS.textLight)
+              .opacity(0.9)
+          }
+          .width('25%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onNavigate('pages/OrderListPage?status=review')
+          })
         }
         .width('90%')
+        .padding(20)
+        .backgroundColor('rgba(255, 255, 255, 0.1)')
+        .borderRadius(16)
         .margin({ bottom: -40 })
         .shadow({
           radius: 10,
@@ -207,7 +283,10 @@ struct UserCenter {
         })
       }
       .width('100%')
-      .backgroundColor(COLORS.darkBg)
+      .backgroundLinearGradient({
+        colors: [COLORS.headerBg, COLORS.headerBgLight],
+        direction: GradientDirection.Top
+      })
       .padding({ bottom: 40 })
     }
   }
@@ -222,98 +301,66 @@ struct UserCenter {
           .fontColor(COLORS.primary)
           .layoutWeight(1)
 
-        Text('查看全部 >')
-          .fontSize(14)
-          .fontColor(COLORS.secondary)
+        Button() {
+          Text('查看全部 >')
+            .fontSize(14)
+            .fontColor(COLORS.secondary)
+        }
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.onNavigate('pages/OrderListPage')
+        })
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
       .margin({ bottom: 16 })
 
       Row() {
-        Column() {
-          Row() {
-            Column() {
-              Text('💳')
-                .fontSize(32)
-                .backgroundColor('#FFF0F5')
+        ForEach(this.orders, (order, index) => {
+          Column() {
+            Row() {
+              Column() {
+                Stack() {
+                  Text(order.icon)
+                    .fontSize(32)
+                  if (order.count > 0) {
+                    Text(order.count.toString())
+                      .fontSize(12)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(Color.White)
+                      .backgroundColor(COLORS.accent)
+                      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                      .borderRadius(10)
+                      .align(Alignment.TopEnd)
+                      .position({ x: 35, y: -5 })
+                  }
+                }
                 .width(60)
                 .height(60)
                 .borderRadius(30)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(HorizontalAlign.Center)
+                .backgroundColor(this.getIconBgColor(index))
+                .shadow({
+                  radius: 4,
+                  color: 'rgba(0, 0, 0, 0.05)',
+                  offsetX: 0,
+                  offsetY: 2
+                })
+              }
             }
+            .margin({ bottom: 8 })
+            Text(order.status)
+              .fontSize(14)
+              .fontColor(COLORS.secondary)
           }
-          .margin({ bottom: 8 })
-          Text('待付款')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-
-        Column() {
-          Row() {
-            Column() {
-              Text('📦')
-                .fontSize(32)
-                .backgroundColor('#F0F8FF')
-                .width(60)
-                .height(60)
-                .borderRadius(30)
-                .justifyContent(FlexAlign.Center)
-                .alignItems(HorizontalAlign.Center)
-            }
-          }
-          .margin({ bottom: 8 })
-          Text('待发货')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-
-        Column() {
-          Row() {
-            Column() {
-              Text('🚚')
-                .fontSize(32)
-                .backgroundColor('#F0FFF0')
-                .width(60)
-                .height(60)
-                .borderRadius(30)
-                .justifyContent(FlexAlign.Center)
-                .alignItems(HorizontalAlign.Center)
-            }
-          }
-          .margin({ bottom: 8 })
-          Text('待收货')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-
-        Column() {
-          Row() {
-            Column() {
-              Text('🔄')
-                .fontSize(32)
-                .backgroundColor('#FFFFF0')
-                .width(60)
-                .height(60)
-                .borderRadius(30)
-                .justifyContent(FlexAlign.Center)
-                .alignItems(HorizontalAlign.Center)
-            }
-          }
-          .margin({ bottom: 8 })
-          Text('退换/售后')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
+          .width('25%')
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            const statusMap = ['unpaid', 'shipping', 'delivering', 'aftersale']
+            this.onNavigate(`pages/OrderListPage?status=${statusMap[index]}`)
+          })
+        })
       }
       .width('100%')
     }
@@ -344,130 +391,39 @@ struct UserCenter {
 
       // 第一行服务
       Row() {
-        Column() {
-          Text('📍')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('收货地址')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
-        .onClick(() => {
+        this.ToolItem('📍', '收货地址', 0, () => {
           this.onNavigate('pages/AddressManagePage')
         })
-
-        Column() {
-          Text('👤')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('销售客服')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
-
-        Column() {
-          Text('📦')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('我的包图')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
-
-        Column() {
-          Text('📤')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('分享好友')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
+        this.ToolItem('👤', '销售客服', 1)
+        this.ToolItem('📦', '我的包图', 2)
+        this.ToolItem('📤', '分享好友', 3)
       }
 
       // 第二行服务
       Row() {
-        Column() {
-          Text('📖')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('新手教程')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
-
-        Column() {
-          Text('❤️')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('我的收藏')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
-        .onClick(() => {
+        this.ToolItem('📖', '新手教程', 4)
+        this.ToolItem('❤️', '我的收藏', 5, () => {
           this.onNavigate('pages/FavoritePage')
         })
-
-        Column() {
-          Text('🛒')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('购物车')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
-        .onClick(() => {
+        this.ToolItem('🛒', '购物车', 6, () => {
           this.onNavigate('pages/CartPageNew')
         })
-
-        Column() {
-          Text('🎧')
-            .fontSize(32)
-            .margin({ bottom: 8 })
-          Text('客服中心')
-            .fontSize(14)
-            .fontColor(COLORS.secondary)
-        }
-        .width('25%')
-        .alignItems(HorizontalAlign.Center)
-        .padding(16)
-        .backgroundColor(COLORS.cardBg)
+        this.ToolItem('🎧', '客服中心', 7)
       }
 
-      // 关于我们
-      Text('关于我们')
-        .fontSize(16)
-        .fontColor(COLORS.primary)
-        .width('100%')
-        .padding(20)
-        .backgroundColor(COLORS.cardBg)
+      // 退出登录按钮（如果已登录）
+      if (this.user) {
+        Button('退出登录')
+          .fontSize(16)
+          .fontColor(COLORS.primary)
+          .backgroundColor(Color.Transparent)
+          .width('100%')
+          .padding(20)
+          .borderRadius(0)
+          .onClick(() => {
+            this.logout()
+          })
+      }
     }
     .width('100%')
     .borderRadius(16)
@@ -478,6 +434,44 @@ struct UserCenter {
       offsetY: 2
     })
     .margin({ bottom: 20 })
+  }
+
+  @Builder
+  ToolItem(icon: string, text: string, index: number, onClick?: () => void) {
+    Column() {
+      Row() {
+        Text(icon)
+          .fontSize(32)
+          .backgroundColor(this.getIconBgColor(index))
+          .width(60)
+          .height(60)
+          .borderRadius(30)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .shadow({
+            radius: 4,
+            color: 'rgba(0, 0, 0, 0.05)',
+            offsetX: 0,
+            offsetY: 2
+          })
+      }
+      .margin({ bottom: 8 })
+      Text(text)
+        .fontSize(14)
+        .fontColor(COLORS.textSecondary)
+    }
+    .width('25%')
+    .alignItems(HorizontalAlign.Center)
+    .padding(16)
+    .backgroundColor(COLORS.cardBg)
+    .onClick(() => {
+      if (onClick) onClick()
+    })
+  }
+
+  private getIconBgColor(index: number): string {
+    const colors = ['#FFF0F5', '#F0F8FF', '#F0FFF0', '#FFFFF0', '#F5F5F5', '#FFF5EE', '#F0F8FF', '#F5FFFA']
+    return colors[index % colors.length]
   }
 
   build() {
