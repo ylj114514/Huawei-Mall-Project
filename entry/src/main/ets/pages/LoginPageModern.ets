@@ -43,6 +43,7 @@ struct LoginPageModern {
   @State showPassword: boolean = false
   @State showConfirmPassword: boolean = false
   @State errorMessage: string = ''
+  @State showOtherLoginMethods: boolean = false
 
   private storage: StorageManager = StorageManager.getInstance()
   private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
@@ -312,15 +313,22 @@ struct LoginPageModern {
       .width('100%')
       .margin({ bottom: 16 })
 
-      // 忘记密码
+      // 忘记密码和立即注册
       if (this.isLoginMode) {
         Row() {
           Blank()
           Text('忘记密码？')
             .fontSize(14)
             .fontColor(COLORS.primary)
+            .margin({ right: 20 })
             .onClick(() => {
               router.pushUrl({ url: 'pages/ForgotPasswordPage' })
+            })
+          Text('立即注册')
+            .fontSize(14)
+            .fontColor(COLORS.primary)
+            .onClick(() => {
+              this.toggleMode()
             })
         }
         .width('100%')
@@ -498,50 +506,58 @@ struct LoginPageModern {
       // 第三方登录
       if (this.isLoginMode) {
         Column() {
-          Text('其他登录方式')
+          // 其他登录方式切换按钮
+          Text(this.showOtherLoginMethods ? '收起其他登录方式' : '其他登录方式')
             .fontSize(14)
-            .fontColor(COLORS.textSecondary)
-            .margin({ bottom: 20 })
-
-          Row({ space: 20 }) {
-            Button() {
-              Text('📱')
-                .fontSize(24)
-            }
-            .width(48)
-            .height(48)
-            .backgroundColor('#1DAF57')
-            .borderRadius(24)
+            .fontColor(COLORS.primary)
+            .margin({ bottom: 16 })
             .onClick(() => {
-              // 微信登录
+              this.showOtherLoginMethods = !this.showOtherLoginMethods
             })
 
-            Button() {
-              Text('☁️')
-                .fontSize(24)
-            }
-            .width(48)
-            .height(48)
-            .backgroundColor('#4A90E2')
-            .borderRadius(24)
-            .onClick(() => {
-              // QQ登录
-            })
+          // 其他登录方式卡片
+          if (this.showOtherLoginMethods) {
+            Row({ space: 20 }) {
+              Button() {
+                Text('📱')
+                  .fontSize(24)
+              }
+              .width(48)
+              .height(48)
+              .backgroundColor('#1DAF57')
+              .borderRadius(24)
+              .onClick(() => {
+                // 微信登录
+              })
 
-            Button() {
-              Text('🍎')
-                .fontSize(24)
+              Button() {
+                Text('☁️')
+                  .fontSize(24)
+              }
+              .width(48)
+              .height(48)
+              .backgroundColor('#4A90E2')
+              .borderRadius(24)
+              .onClick(() => {
+                // QQ登录
+              })
+
+              Button() {
+                Text('🍎')
+                  .fontSize(24)
+              }
+              .width(48)
+              .height(48)
+              .backgroundColor('#000000')
+              .borderRadius(24)
+              .onClick(() => {
+                // Apple ID登录
+              })
             }
-            .width(48)
-            .height(48)
-            .backgroundColor('#000000')
-            .borderRadius(24)
-            .onClick(() => {
-              // Apple ID登录
-            })
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .margin({ bottom: 16 })
           }
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
         }
       }
 

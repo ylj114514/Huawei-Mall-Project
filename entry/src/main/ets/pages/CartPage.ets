@@ -60,7 +60,7 @@ struct CartPage {
           0,
           '',
           '',
-          [item.image || ''],
+          [item.image ? $r(`app.media.${item.image}`) : $r('app.media.startIcon')],
           '',
           [],
           0,

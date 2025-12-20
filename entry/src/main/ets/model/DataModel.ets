@@ -223,7 +223,7 @@ export class Order {
 export class OrderItem {
   productId: string
   productName: string
-  productImage: string
+  productImage: Resource
   price: number
   quantity: number
 
