@@ -2,7 +2,7 @@ import { MockData } from '../model/ProductModel'
 
 @Component
 export struct SearchBar {
-  @State searchText: string = ''
+  @Link searchText: string
   @State showSuggestions: boolean = false
   @State searchHistory: string[] = []
   @State suggestions: string[] = []
@@ -80,6 +80,7 @@ export struct SearchBar {
             .onClick(() => {
               this.searchText = ''
               this.showSuggestions = false
+              this.onSearch('')
             })
         }
       }

@@ -2,7 +2,7 @@ import { StorageManager } from '../utils/StorageManager'
 
 @Component
 export struct SearchBarEnhanced {
-  @State searchText: string = ''
+  @Link searchText: string
   @State showHistory: boolean = false
   @State searchHistory: string[] = []
   @State hotSearches: string[] = ['华为Mate 60', 'iPhone 15', 'MacBook Pro', 'AirPods Pro', '小米14']
@@ -109,6 +109,7 @@ export struct SearchBarEnhanced {
           .onClick(() => {
             this.searchText = ''
             this.onTextChange?.('')
+            this.handleSearch('')
           })
         }
 

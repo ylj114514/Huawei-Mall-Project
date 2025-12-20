@@ -157,6 +157,7 @@ struct SearchResultPage {
         .onClick(() => this.goBack())
 
         SearchBarEnhanced({
+          searchText: $searchText,
           onSearch: this.onSearch.bind(this)
         })
           .layoutWeight(1)
