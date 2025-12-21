@@ -1,5 +1,6 @@
 import router from '@ohos.router'
-import { SimpleDatabaseManager } from '../model/SimpleDatabaseManager'
+import { DatabaseManager } from '../database/DatabaseManager'
+
 import { ProductModel, MockData } from '../model/ProductModel'
 
 interface Statistics {
@@ -19,7 +20,7 @@ struct AdminDashboard {
   @State statistics: Statistics = { total: 0, totalValue: 0, lowStock: 0 }
 
   private categories: string[] = ['全部', '手机', '平板', '电脑', '耳机', '智能手表', '其他']
-  private dbManager: SimpleDatabaseManager = SimpleDatabaseManager.getInstance()
+  private dbManager: DatabaseManager = DatabaseManager.getInstance()
 
   aboutToAppear() {
     this.loadData()
