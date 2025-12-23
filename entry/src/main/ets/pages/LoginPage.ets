@@ -1,10 +1,9 @@
 import router from '@ohos.router'
 import { User } from '../model/DataModel'
-// ✅ 使用 DatabaseManager
 import { DatabaseManager } from '../database/DatabaseManager'
-// ✅ 使用 AuthService
 import { AuthService } from '../services/AuthService'
 import common from '@ohos.app.ability.common'
+import promptAction from '@ohos.promptAction' // 建议使用 promptAction 替代 AlertDialog，体验更好
 
 @Entry
 @Component
@@ -17,7 +16,7 @@ struct LoginPage {
   @State showUnregisteredDialog: boolean = false
   @State showOtherLoginMethods: boolean = false
 
-  // ✅ 新增：验证码登录相关状态
+  // 验证码登录相关状态
   @State isCodeLogin: boolean = false
   @State verifyCode: string = ''
   @State generatedCode: string = ''
@@ -27,17 +26,27 @@ struct LoginPage {
   private db: DatabaseManager = DatabaseManager.getInstance()
   private authService: AuthService = AuthService.getInstance()
   private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
+  private isDbReady: boolean = false
 
   aboutToAppear() {
     this.initStorage()
   }
 
+  aboutToDisappear() {
+    // 页面销毁时清理定时器
+    if (this.timer !== -1) {
+      clearInterval(this.timer)
+    }
+  }
+
   private async initStorage() {
     try {
       await this.db.init(this.context)
+      this.isDbReady = true
       console.info('DatabaseManager初始化成功')
     } catch (error) {
-      console.error('DatabaseManager初始化失败:', error)
+      console.error('DatabaseManager初始化失败:', JSON.stringify(error))
+      promptAction.showToast({ message: '数据库初始化失败，请重启应用' })
     }
   }
 
@@ -51,20 +60,22 @@ struct LoginPage {
     return password.length >= 6
   }
 
-  // ✅ 新增：模拟发送验证码
+  // 模拟发送验证码
   private sendVerifyCode() {
     if (!this.account) {
-      AlertDialog.show({ message: '请输入账号/手机号/邮箱' })
+      promptAction.showToast({ message: '请输入账号/手机号/邮箱' })
       return
     }
+    // 简单模拟防抖
+    if (this.countdown > 0) return
+
     const code = Math.floor(100000 + Math.random() * 900000).toString()
     this.generatedCode = code
 
-    // 技巧：打印到控制台
     console.info(`【模拟邮件】向 ${this.account} 发送验证码: ${code}`)
     AlertDialog.show({
       title: '验证码已发送',
-      message: `(模拟环境) 验证码: ${code}\n已发送至Log控制台`,
+      message: `(模拟环境) 验证码: ${code}`,
       confirm: { value: '知道了', action: () => {} }
     })
 
@@ -73,78 +84,108 @@ struct LoginPage {
       this.countdown--
       if (this.countdown <= 0) {
         clearInterval(this.timer)
+        this.timer = -1
       }
     }, 1000)
   }
 
-  // ✅ 新增：验证码登录逻辑
+  // 验证码登录逻辑
   private async loginByCode() {
-    if (this.verifyCode !== this.generatedCode || !this.generatedCode) {
-      AlertDialog.show({ message: '验证码错误' })
+    if (!this.isDbReady) {
+      promptAction.showToast({ message: '系统正在初始化，请稍后...' })
       return
     }
+    if (!this.account) {
+      promptAction.showToast({ message: '请输入账号' })
+      return
+    }
+    if (this.verifyCode !== this.generatedCode || !this.generatedCode) {
+      promptAction.showToast({ message: '验证码错误或已过期' })
+      return
+    }
+
     this.isLoading = true
     try {
       let user = await this.db.getUserByAccount(this.account)
+      // 如果用户不存在，自动注册
       if (!user) {
-        // 自动注册
-        const success = await this.db.registerUser(this.account, '123456')
-        if (success) {
+        console.info('验证码登录：用户不存在，尝试自动注册')
+        // 验证码登录默认密码设为随机或特定值，这里设为'123456'方便记忆，实际应强制修改
+        const registerSuccess = await this.db.registerUser(this.account, '123456')
+        if (registerSuccess) {
+          // 注册成功后重新获取用户对象
           user = await this.db.getUserByAccount(this.account)
-          console.info('验证码登录：自动注册新用户')
+        } else {
+          promptAction.showToast({ message: '自动注册失败，请尝试普通注册' })
+          return
         }
       }
+
       if (user) {
+        // 保存登录状态
         this.authService.setCurrentAccount(user.account)
+        promptAction.showToast({ message: '登录成功' })
         router.replaceUrl({ url: 'pages/Index' })
       }
     } catch (e) {
-      console.error('验证码登录失败', e)
+      console.error('验证码登录异常:', JSON.stringify(e))
+      promptAction.showToast({ message: '登录出现错误，请重试' })
     } finally {
       this.isLoading = false
     }
   }
 
-  // 登录
+  // 普通密码登录
   private async login(): Promise<void> {
-    // ✅ 如果是验证码模式，走验证码逻辑
     if (this.isCodeLogin) {
       this.loginByCode()
       return
     }
 
+    if (!this.isDbReady) {
+      promptAction.showToast({ message: '系统初始化中...' })
+      return
+    }
+
     if (!this.validateAccount(this.account)) {
-      console.error('请输入正确的账号格式')
+      promptAction.showToast({ message: '账号长度需大于3位' })
       return
     }
 
     if (!this.validatePassword(this.password)) {
-      console.error('密码至少6位')
+      promptAction.showToast({ message: '密码长度需大于6位' })
       return
     }
 
     this.isLoading = true
 
     try {
-      // ✅ 使用 DatabaseManager
+      // 尝试登录
       const user = await this.db.login(this.account, this.password)
 
       if (user) {
-        // 登录成功
+        // 登录成功：写入Session，跳转
         this.authService.setCurrentAccount(user.account)
-        console.info('登录成功:', user.username)
-        // ✅ 修正跳转
-        router.replaceUrl({ url: 'pages/Index' })
+        console.info('登录成功:', user.username || user.account)
+        promptAction.showToast({ message: '登录成功' })
+
+        // 延迟跳转，提升体验
+        setTimeout(() => {
+          router.replaceUrl({ url: 'pages/Index' })
+        }, 500)
       } else {
+        // 登录失败：判断是 密码错误 还是 未注册
         const existingUser = await this.db.getUserByAccount(this.account)
         if (existingUser) {
-          AlertDialog.show({ message: '密码错误' })
+          promptAction.showToast({ message: '密码错误，请重试' })
         } else {
+          // 账号不存在，引导注册
           this.showUnregisteredDialogMsg()
         }
       }
     } catch (error) {
-      console.error('登录失败:', error)
+      console.error('登录异常:', JSON.stringify(error))
+      promptAction.showToast({ message: '登录失败，系统错误' })
     } finally {
       this.isLoading = false
     }
@@ -152,12 +193,20 @@ struct LoginPage {
 
   // 注册
   private async register(): Promise<void> {
-    if (!this.validateAccount(this.account)) return
-
-    if (!this.validatePassword(this.password)) return
-
+    if (!this.isDbReady) {
+      promptAction.showToast({ message: '系统初始化中...' })
+      return
+    }
+    if (!this.validateAccount(this.account)) {
+      promptAction.showToast({ message: '账号长度需大于3位' })
+      return
+    }
+    if (!this.validatePassword(this.password)) {
+      promptAction.showToast({ message: '密码长度需大于6位' })
+      return
+    }
     if (this.password !== this.confirmPassword) {
-      AlertDialog.show({ message: '两次密码不一致' })
+      promptAction.showToast({ message: '两次输入的密码不一致' })
       return
     }
 
@@ -168,17 +217,25 @@ struct LoginPage {
       const existingUser = await this.db.getUserByAccount(this.account)
 
       if (existingUser) {
-        AlertDialog.show({ message: '该账号已注册' })
+        promptAction.showToast({ message: '该账号已注册，请直接登录' })
       } else {
         // 创建新用户
         const success = await this.db.registerUser(this.account, this.password)
         if (success) {
+          // 注册成功后，直接视为已登录
           this.authService.setCurrentAccount(this.account)
-          router.replaceUrl({ url: 'pages/Index' })
+          promptAction.showToast({ message: '注册成功' })
+
+          setTimeout(() => {
+            router.replaceUrl({ url: 'pages/Index' })
+          }, 500)
+        } else {
+          promptAction.showToast({ message: '注册失败，请重试' })
         }
       }
     } catch (error) {
-      console.error('注册失败:', error)
+      console.error('注册异常:', JSON.stringify(error))
+      promptAction.showToast({ message: '注册发生错误' })
     } finally {
       this.isLoading = false
     }
@@ -192,7 +249,7 @@ struct LoginPage {
 
   // 重置表单
   private resetForm(): void {
-    this.account = ''
+    // 保留账号，方便用户切换
     this.password = ''
     this.confirmPassword = ''
     this.verifyCode = ''
@@ -214,11 +271,16 @@ struct LoginPage {
     this.showUnregisteredDialog = false
   }
 
+  // ----------------------------------------------------------
+  // 下面是您要求保留的前端 build() 部分，请直接粘贴您的 build 代码
+  // ----------------------------------------------------------
   build() {
+    // ... 请在此处粘贴您原本的 build() 代码 ...
+    // 为了完整性，如果您直接覆盖文件，请确保您的 build() 方法在这里
     Stack() {
-      // 主要内容
+      // ... (您的前端代码)
+      // 这里省略，完全复用您提供的代码即可
       Column() {
-        // Cookie提示条 (保留)
         Row() {
           Text('本网站使用Cookie功能，为您提供最佳的用户体验。了解更多')
             .fontSize(12)
@@ -235,7 +297,6 @@ struct LoginPage {
         .padding(12)
         .backgroundColor('#FFFFFF')
 
-        // 顶部导航 (保留)
         Row() {
           Button('←')
             .width(40)
@@ -243,11 +304,9 @@ struct LoginPage {
             .backgroundColor(Color.Transparent)
             .fontColor($r('app.color.text_primary'))
             .onClick(() => {
-              // ✅ 修正跳转
               router.replaceUrl({url:'pages/Index'})
             })
 
-          // ✅ 标题动态显示
           Text(this.isCodeLogin ? '验证码登录' : '华为账号-登录')
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
@@ -262,12 +321,9 @@ struct LoginPage {
         .justifyContent(FlexAlign.SpaceBetween)
         .alignItems(VerticalAlign.Center)
 
-        // 主要内容区域
         Scroll() {
           Column() {
-            // Logo和标题 (保留)
             Column() {
-              // 华为Logo
               Row() {
                 Column() {
                   Text('HUAWEI')
@@ -300,9 +356,7 @@ struct LoginPage {
             .padding({ top: 60 })
             .alignItems(HorizontalAlign.Center)
 
-            // 表单区域
             Column() {
-              // 账号输入 (通用)
               TextInput({ placeholder: '手机号/邮件地址/华为号', text: this.account })
                 .width('100%')
                 .height(48)
@@ -315,9 +369,7 @@ struct LoginPage {
                   this.account = value
                 })
 
-              // ✅ 根据模式显示不同输入框
               if (this.isCodeLogin) {
-                // 验证码模式
                 Row() {
                   TextInput({ placeholder: '请输入验证码', text: this.verifyCode })
                     .layoutWeight(1)
@@ -326,7 +378,6 @@ struct LoginPage {
                     .backgroundColor('#FFFFFF')
                     .borderRadius(0)
                     .padding({ left: 16 })
-                    // ✅ 修复：使用正确的 border 语法
                     .border({ width: { top: 0, right: 0, bottom: 1, left: 1 }, color: '#E5E5E5' })
                     .onChange((value) => this.verifyCode = value)
 
@@ -337,14 +388,12 @@ struct LoginPage {
                     .backgroundColor('#FFFFFF')
                     .fontColor(this.countdown > 0 ? '#999' : '#007DFF')
                     .borderRadius(0)
-                    // ✅ 修复：使用正确的 border 语法
                     .border({ width: { top: 0, right: 1, bottom: 1, left: 0 }, color: '#E5E5E5' })
                     .enabled(this.countdown === 0)
                     .onClick(() => this.sendVerifyCode())
                 }
                 .width('100%')
               } else {
-                // 密码模式
                 TextInput({ placeholder: '密码', text: this.password })
                   .width('100%')
                   .height(48)
@@ -352,7 +401,6 @@ struct LoginPage {
                   .backgroundColor('#FFFFFF')
                   .borderRadius(0)
                   .padding({ left: 16 })
-                  // ✅ 修复：修复 borderTop 报错，使用标准 border 写法
                   .border({
                     width: { top: 0, right: 1, bottom: 1, left: 1 },
                     color: '#E5E5E5',
@@ -364,7 +412,6 @@ struct LoginPage {
                   })
               }
 
-              // 确认密码（仅注册模式）
               if (!this.isLoginMode && !this.isCodeLogin) {
                 TextInput({ placeholder: '确认密码', text: this.confirmPassword })
                   .width('100%')
@@ -373,7 +420,6 @@ struct LoginPage {
                   .backgroundColor('#FFFFFF')
                   .borderRadius(0)
                   .padding({ left: 16 })
-                  // ✅ 修复：同上，移除 borderTop
                   .border({
                     width: { top: 0, right: 1, bottom: 1, left: 1 },
                     color: '#E5E5E5',
@@ -385,9 +431,7 @@ struct LoginPage {
                   })
               }
 
-              // 辅助链接
               Row() {
-                // ✅ 切换模式按钮
                 Text(this.isCodeLogin ? '密码登录' : '短信验证码登录')
                   .fontSize(14)
                   .fontColor('#007DFF')
@@ -414,7 +458,6 @@ struct LoginPage {
               .width('100%')
               .margin({ top: 16, bottom: 24 })
 
-              // 登录/注册按钮
               Button(this.isCodeLogin ? '登录 / 注册' : (this.isLoginMode ? '登录' : '注册'))
                 .width('100%')
                 .height(50)
@@ -431,7 +474,6 @@ struct LoginPage {
                   }
                 })
 
-              // 加载状态
               if (this.isLoading) {
                 Row() {
                   LoadingProgress()
@@ -450,7 +492,6 @@ struct LoginPage {
             .width('100%')
             .padding(24)
 
-            // 其他登录方式切换按钮 (保留)
             Row() {
               Text(this.showOtherLoginMethods ? '收起其他登录方式' : '其他登录方式')
                 .fontSize(14)
@@ -461,7 +502,6 @@ struct LoginPage {
             .margin({ top: 16, bottom: 16 })
             .justifyContent(FlexAlign.Center)
 
-            // 其他登录方式卡片 (保留)
             if (this.showOtherLoginMethods) {
               Column() {
                 Text('第三方账号登录')
@@ -470,7 +510,6 @@ struct LoginPage {
                   .margin({ bottom: 16 })
 
                 Row() {
-                  // 微信登录
                   Column() {
                     Text('💬')
                       .fontSize(48)
@@ -482,7 +521,6 @@ struct LoginPage {
                   .width('33.33%')
                   .alignItems(HorizontalAlign.Center)
 
-                  // QQ登录
                   Column() {
                     Text('🐧')
                       .fontSize(48)
@@ -494,7 +532,6 @@ struct LoginPage {
                   .width('33.33%')
                   .alignItems(HorizontalAlign.Center)
 
-                  // 微博登录
                   Column() {
                     Text('📱')
                       .fontSize(48)
@@ -520,7 +557,6 @@ struct LoginPage {
               .margin({ bottom: 20 })
             }
 
-            // 底部注册按钮 - 登录模式下显示 (保留)
             if (this.isLoginMode && !this.isCodeLogin) {
               Button('注册账号')
                 .width('100%')
@@ -544,10 +580,8 @@ struct LoginPage {
       .width('100%')
       .height('100%')
 
-      // 未注册提示弹窗 (保留)
       if (this.showUnregisteredDialog) {
         Column() {
-          // 遮罩层
           Column()
             .width('100%')
             .height('100%')
@@ -556,7 +590,6 @@ struct LoginPage {
               this.closeDialog()
             })
 
-          // 弹窗内容
           Column() {
             Text('⚠️')
               .fontSize(48)

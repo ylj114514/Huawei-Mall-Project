@@ -1,13 +1,16 @@
-import { DatabaseManager } from '../database/DatabaseManager'
-import { User } from '../model/DataModel'
+import router from '@ohos.router'
 
+/**
+ * 认证服务类 (单例模式)
+ * 职责：管理当前登录用户的会话状态 (Session)
+ * 说明：具体的登录/注册/数据存储逻辑已迁移至 DatabaseManager
+ */
 export class AuthService {
   private static instance: AuthService
-  private static readonly KEY_CURRENT_ACCOUNT: string = 'currentAccount'
+  private currentAccount: string = ''
+  private isLogin: boolean = false
 
-  private db: DatabaseManager = DatabaseManager.getInstance()
-
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): AuthService {
     if (!AuthService.instance) {
@@ -16,47 +19,51 @@ export class AuthService {
     return AuthService.instance
   }
 
-  // ✅ 修复：添加 init 方法
-  public async init(): Promise<void> {
-    const account = AppStorage.get<string>(AuthService.KEY_CURRENT_ACCOUNT)
-    if (account) {
-      this.db.setCurrentUserAccount(account)
-    }
+  /**
+   * 设置当前登录账号
+   * 在 DatabaseManager 验证通过后调用此方法保存会话
+   */
+  public setCurrentAccount(account: string) {
+    this.currentAccount = account
+    this.isLogin = true
+    // 将账号保存到全局 AppStorage，方便其他页面（如个人中心）获取
+    AppStorage.SetOrCreate('currentAccount', account)
   }
 
-  public setCurrentAccount(account: string): void {
-    AppStorage.setOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, account)
-    this.db.setCurrentUserAccount(account)
-  }
-
-  public clearCurrentAccount(): void {
-    AppStorage.setOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, '')
-    this.db.setCurrentUserAccount(null)
-  }
-
+  /**
+   * 获取当前登录账号
+   */
   public getCurrentAccount(): string {
-    return AppStorage.get<string>(AuthService.KEY_CURRENT_ACCOUNT) || ''
+    // 优先从内存获取，如果内存为空尝试从 AppStorage 恢复 (应对页面刷新)
+    if (!this.currentAccount) {
+      this.currentAccount = AppStorage.Get('currentAccount') || ''
+      this.isLogin = !!this.currentAccount
+    }
+    return this.currentAccount
   }
 
-  // ✅ 修复：添加 getCurrentUser 方法，返回完整的 User 对象
-  public async getCurrentUser(): Promise<User | null> {
-    const account = this.getCurrentAccount()
-    if (!account) return null
-    return await this.db.getUserByAccount(account)
-  }
-
-  // ✅ 修复：添加 logout 方法
-  public logout(): void {
-    this.clearCurrentAccount()
-  }
-
+  /**
+   * 检查是否已登录
+   */
   public isLoggedIn(): boolean {
     return !!this.getCurrentAccount()
   }
 
-  public async isAdmin(): Promise<boolean> {
-    const account = this.getCurrentAccount()
-    if (!account) return false
-    return this.db.isAdmin(account)
+  /**
+   * 退出登录
+   */
+  public logout() {
+    this.currentAccount = ''
+    this.isLogin = false
+    AppStorage.SetOrCreate('currentAccount', '')
+    // 跳转回登录页
+    router.replaceUrl({ url: 'pages/LoginPage' })
+  }
+
+  /**
+   * 检查是否是管理员 (根据账号名判断的简单逻辑，可扩展)
+   */
+  public isAdmin(): boolean {
+    return this.getCurrentAccount() === 'admin'
   }
 }
