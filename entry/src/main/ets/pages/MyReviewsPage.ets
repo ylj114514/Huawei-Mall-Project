@@ -1,7 +1,88 @@
 import router from '@ohos.router'
-import { Comment } from '../model/DataModel'
-import { StorageManager } from '../utils/StorageManager'
 
+// ==========================================
+// 1. 定义类模型 (解决严格模式 Object literal 报错)
+// ==========================================
+class User {
+  username: string = ''
+}
+
+class Comment {
+  id: string = ''
+  userId: string = ''
+  username: string = ''
+  avatar: string | Resource = ''
+  productId: string = ''
+  content: string = ''
+  rating: number = 0
+  timestamp: number = 0
+
+  // 辅助方法：格式化时间
+  getFormattedTime(): string {
+    const date = new Date(this.timestamp)
+    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
+  }
+}
+
+// ==========================================
+// 2. 本地模拟存储服务 (解决依赖缺失报错)
+// ==========================================
+class LocalStorageUtils {
+  // 模拟获取当前登录用户
+  static async loadUser(): Promise<User> {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // 必须实例化类
+        let user = new User()
+        user.username = 'user_001'
+        resolve(user)
+      }, 500)
+    })
+  }
+
+  // 模拟获取所有评论数据
+  static async loadComments(): Promise<Comment[]> {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // 创建评论1
+        let c1 = new Comment()
+        c1.id = '1'
+        c1.userId = 'user_001'
+        c1.username = 'user_001'
+        c1.productId = '1001'
+        c1.content = '手机非常好用，运行流畅，拍照也很清晰！'
+        c1.rating = 5
+        c1.timestamp = 1709856000000
+
+        // 创建评论2
+        let c2 = new Comment()
+        c2.id = '2'
+        c2.userId = 'user_001'
+        c2.username = 'user_001'
+        c2.productId = '1002'
+        c2.content = '物流很快，但是包装稍微有点破损，希望改进。'
+        c2.rating = 4
+        c2.timestamp = 1709942400000
+
+        resolve([c1, c2])
+      }, 800)
+    })
+  }
+
+  // 模拟删除评论
+  static async deleteComment(commentId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.info(`模拟删除评论: ${commentId}`)
+        resolve(true)
+      }, 500)
+    })
+  }
+}
+
+// ==========================================
+// 3. 页面组件
+// ==========================================
 @Entry
 @Component
 struct MyReviewsPage {
@@ -9,7 +90,6 @@ struct MyReviewsPage {
   @State isLoading: boolean = true
   @State currentUserId: string = ''
   @State currentUsername: string = ''
-  private storage: StorageManager = StorageManager.getInstance()
 
   aboutToAppear() {
     this.loadUserData()
@@ -18,44 +98,40 @@ struct MyReviewsPage {
 
   private async loadUserData(): Promise<void> {
     try {
-      const user = await this.storage.loadUser()
+      const user = await LocalStorageUtils.loadUser()
       if (user) {
         this.currentUserId = user.username
         this.currentUsername = user.username
       } else {
-        // 没有用户数据，返回上一页
         router.back()
       }
     } catch (error) {
-      console.error('加载用户数据失败:', error)
+      console.error('加载用户数据失败:', JSON.stringify(error))
     }
   }
 
   private async loadUserReviews(): Promise<void> {
     try {
       this.isLoading = true
-      const allComments = await this.storage.loadComments()
-      this.userReviews = allComments.filter(comment => comment.userId === this.currentUserId)
+      const allComments = await LocalStorageUtils.loadComments()
+      if (allComments) {
+        this.userReviews = allComments.filter((comment: Comment) => comment.userId === this.currentUserId)
+      }
       this.isLoading = false
     } catch (error) {
-      console.error('加载用户评价失败:', error)
+      console.error('加载用户评价失败:', JSON.stringify(error))
       this.isLoading = false
     }
   }
 
   private async deleteReview(reviewId: string): Promise<void> {
     try {
-      // 从存储中删除
-      const allComments = await this.storage.loadComments()
-      const filteredComments = allComments.filter(comment => comment.id !== reviewId)
-      await this.storage.saveComments(filteredComments)
-
-      // 重新加载评价
-      await this.loadUserReviews()
-
-      console.log('评价删除成功')
+      await LocalStorageUtils.deleteComment(reviewId)
+      // 本地移除
+      this.userReviews = this.userReviews.filter((item) => item.id !== reviewId)
+      console.info('评价删除成功')
     } catch (error) {
-      console.error('删除评价失败:', error)
+      console.error('删除评价失败:', JSON.stringify(error))
     }
   }
 

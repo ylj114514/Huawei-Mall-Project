@@ -223,14 +223,16 @@ export class Order {
 export class OrderItem {
   productId: string
   productName: string
-  productImage: Resource
+  // ✅ 核心修复：类型改为 ResourceStr，兼容上传的图片路径
+  productImage: ResourceStr
   price: number
   quantity: number
 
   constructor(product: ProductModel, quantity: number) {
     this.productId = product.id
     this.productName = product.name
-    this.productImage = product.images[0]
+    // ✅ 适配逻辑：如果有图取第一张，否则给默认图
+    this.productImage = product.images.length > 0 ? product.images[0] : $r('app.media.APP')
     this.price = product.price
     this.quantity = quantity
   }
@@ -248,7 +250,7 @@ export class Address {
   isDefault: boolean
 
   constructor(name: string = '', phone: string = '', province: string = '', city: string = '',
-              district: string = '', detail: string = '', isDefault: boolean = false) {
+    district: string = '', detail: string = '', isDefault: boolean = false) {
     this.id = `address_${Date.now()}`
     this.name = name
     this.phone = phone

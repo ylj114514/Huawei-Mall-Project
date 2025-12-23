@@ -2,7 +2,7 @@ import router from '@ohos.router'
 import { FavoriteItem } from '../model/DataModel'
 import { FavoriteService } from '../services/FavoriteService'
 import { ProductModel } from '../model/ProductModel'
-import { SearchBar } from '../components/SearchBar'
+// import { SearchBar } from '../components/SearchBar' // ❌ 移除报错组件，改用下方原生组件
 
 @Entry
 @Component
@@ -18,11 +18,15 @@ struct FavoritePage {
     this.loadFavorites()
   }
 
+  // ✅ 新增：页面显示时刷新，防止详情页取消收藏后这里不更新
+  onPageShow() {
+    this.loadFavorites()
+  }
+
   private loadFavorites(): void {
     try {
       this.favorites = this.favoriteService.getFavorites()
 
-      // 获取所有分类
       const categorySet = new Set<string>()
       this.favorites.forEach(item => {
         categorySet.add(item.product.category)
@@ -49,12 +53,10 @@ struct FavoritePage {
   private filterFavorites(): void {
     let filtered = this.favoriteService.getFavorites()
 
-    // 按分类筛选
     if (this.selectedCategory !== '全部') {
       filtered = this.favoriteService.getFavoritesByCategory(this.selectedCategory)
     }
 
-    // 按搜索关键词筛选
     if (this.searchText.trim() !== '') {
       filtered = this.favoriteService.searchFavorites(this.searchText.trim())
     }
@@ -64,13 +66,13 @@ struct FavoritePage {
 
   private toggleFavorite(favorite: FavoriteItem): void {
     this.favoriteService.toggleFavorite(favorite.product)
-    this.loadFavorites()
+    this.loadFavorites() // 重新加载刷新状态
   }
 
   private goToProductDetail(product: ProductModel): void {
     router.pushUrl({
       url: 'pages/ProductDetailPage',
-      params: { productId: product.id }
+      params: { product: product } // ✅ 建议传对象
     })
   }
 
@@ -93,7 +95,7 @@ struct FavoritePage {
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
 
-        Text(`(${this.favoriteService.getFavoriteCount()})`)
+        Text(`(${this.favorites.length})`) // ✅ 动态显示数量
           .fontSize(14)
           .fontColor($r('app.color.text_secondary'))
       }
@@ -104,9 +106,19 @@ struct FavoritePage {
       .alignItems(VerticalAlign.Center)
       .backgroundColor($r('app.color.white'))
 
-      // 搜索栏
+      // 搜索栏 - ✅ 使用系统 Search 组件替代，样式完全复刻
       Column() {
-        SearchBar({ onSearch: this.onSearch.bind(this) })
+        Search({ value: this.searchText, placeholder: '搜索收藏...' })
+          .searchButton('搜索')
+          .width('100%')
+          .height(40)
+          .backgroundColor('#F5F5F5') // 浅灰背景
+          .placeholderColor($r('app.color.text_secondary'))
+          .onSubmit((value) => this.onSearch(value))
+          .onChange((value) => {
+            this.searchText = value
+            this.filterFavorites() // 支持实时搜索
+          })
       }
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
@@ -135,7 +147,6 @@ struct FavoritePage {
       .width('100%')
 
       if (this.isLoading) {
-        // 加载状态
         Column() {
           LoadingProgress()
             .width(40)
@@ -150,7 +161,6 @@ struct FavoritePage {
         .justifyContent(FlexAlign.Center)
         .backgroundColor($r('app.color.background'))
       } else if (this.favorites.length === 0) {
-        // 空状态
         Column() {
           Text('❤️')
             .fontSize(80)
@@ -180,13 +190,11 @@ struct FavoritePage {
         .justifyContent(FlexAlign.Center)
         .backgroundColor($r('app.color.background'))
       } else {
-        // 收藏商品列表
         Scroll() {
           Column() {
             ForEach(this.favorites, (favorite: FavoriteItem) => {
               Column() {
                 Row() {
-                  // 商品图片
                   Image(favorite.product.image)
                     .width(100)
                     .height(100)
@@ -195,7 +203,6 @@ struct FavoritePage {
                     .backgroundColor($r('app.color.background'))
                     .margin({ right: 12 })
 
-                  // 商品信息
                   Column() {
                     Text(favorite.product.name)
                       .fontSize(16)
@@ -228,7 +235,6 @@ struct FavoritePage {
                     .width('100%')
                     .justifyContent(FlexAlign.Start)
 
-                    // 收藏时间
                     Text(`收藏于 ${new Date(favorite.addedTime).toLocaleDateString()}`)
                       .fontSize(12)
                       .fontColor($r('app.color.text_secondary'))
@@ -237,15 +243,14 @@ struct FavoritePage {
                   .layoutWeight(1)
                   .alignItems(HorizontalAlign.Start)
 
-                  // 操作按钮
                   Column() {
-                    Button('❤️')
-                      .width(40)
-                      .height(40)
-                      .backgroundColor(Color.Transparent)
-                      .fontColor($r('app.color.error'))
-                      .fontSize(18)
-                      .onClick(() => this.toggleFavorite(favorite))
+                    Button({ type: ButtonType.Circle, stateEffect: true }) {
+                      Text('❤️').fontSize(18).fontColor($r('app.color.error'))
+                    }
+                    .width(40)
+                    .height(40)
+                    .backgroundColor('#FFF0F0')
+                    .onClick(() => this.toggleFavorite(favorite))
 
                     Text('取消')
                       .fontSize(10)
@@ -257,8 +262,7 @@ struct FavoritePage {
                 .width('100%')
                 .padding(16)
 
-                Divider()
-                  .width('100%')
+                Divider().width('100%')
               }
               .width('100%')
               .backgroundColor($r('app.color.white'))

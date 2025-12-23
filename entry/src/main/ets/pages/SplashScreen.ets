@@ -18,7 +18,7 @@ struct SplashScreen {
   }
 
   private onScroll(xOffset: number, yOffset: number) {
-    console.log('SplashScreen scroll offset:', yOffset)
+    console.info('SplashScreen scroll offset:', yOffset)
     this.scrollY = yOffset
     // 根据滚动距离计算透明度和缩放
     this.contentOpacity = Math.max(0, 1 - yOffset / 300)
@@ -27,9 +27,10 @@ struct SplashScreen {
     // 滚动到一定程度后跳转
     if (yOffset > 200 && !this.hasNavigated) {
       this.hasNavigated = true
-      console.log('Navigating to IndexLuxury')
+      console.info('Navigating to Index')
+      // ✅ 修复：跳转到正确的首页
       router.replaceUrl({
-        url: 'pages/IndexMain'
+        url: 'pages/Index'
       })
     }
   }
@@ -37,8 +38,9 @@ struct SplashScreen {
   private handleNavigate() {
     if (!this.hasNavigated) {
       this.hasNavigated = true
+      // ✅ 修复：跳转到正确的首页
       router.replaceUrl({
-        url: 'pages/IndexMain'
+        url: 'pages/Index'
       })
     }
   }
@@ -242,7 +244,6 @@ struct SplashScreen {
         })
     )
     .onClick(() => {
-      // 点击任意位置也可以进入
       this.handleNavigate()
     })
   }

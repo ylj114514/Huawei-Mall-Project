@@ -16,7 +16,7 @@ export class AuthService {
     return AuthService.instance
   }
 
-  // ✅ 修复：添加缺失的 init 方法
+  // ✅ 修复：添加 init 方法
   public async init(): Promise<void> {
     const account = AppStorage.get<string>(AuthService.KEY_CURRENT_ACCOUNT)
     if (account) {
@@ -38,14 +38,14 @@ export class AuthService {
     return AppStorage.get<string>(AuthService.KEY_CURRENT_ACCOUNT) || ''
   }
 
-  // ✅ 修复：添加缺失的 getCurrentUser 方法
+  // ✅ 修复：添加 getCurrentUser 方法，返回完整的 User 对象
   public async getCurrentUser(): Promise<User | null> {
     const account = this.getCurrentAccount()
     if (!account) return null
     return await this.db.getUserByAccount(account)
   }
 
-  // ✅ 修复：添加缺失的 logout 方法
+  // ✅ 修复：添加 logout 方法
   public logout(): void {
     this.clearCurrentAccount()
   }

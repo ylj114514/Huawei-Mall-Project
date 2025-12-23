@@ -1,10 +1,19 @@
-// entry/src/main/ets/pages/ProductEditPage.ets
+// 1. 导入路径规范化（适配 API 9）
 import router from '@ohos.router'
 import common from '@ohos.app.ability.common'
+
+// 保持业务引用
 import { DatabaseManager } from '../database/DatabaseManager'
 import { AuthService } from '../services/AuthService'
 import { ProductModel } from '../model/ProductModel'
 import { AdminGuard } from '../utils/AdminGuard'
+// ✅ 引入上传组件
+import { ImageUploadComponent, ImageUploadItem } from '../components/ImageUploadComponent'
+
+// 2. 类型安全优化：定义路由参数接口
+interface RouteParams {
+  product?: ProductModel
+}
 
 @Entry
 @Component
@@ -29,6 +38,9 @@ struct ProductEditPage {
   @State selectedCategoryIndex: number = 0
   @State isReady: boolean = false
 
+  // ✅ 图片上传组件的状态
+  @State imageItems: ImageUploadItem[] = []
+
   private dbManager: DatabaseManager = DatabaseManager.getInstance()
   private auth: AuthService = AuthService.getInstance()
 
@@ -38,17 +50,14 @@ struct ProductEditPage {
 
   private async initPage() {
     try {
-      // 1) init DB
       const ctx = getContext(this) as common.UIAbilityContext
       await this.dbManager.init(ctx)
 
-      // 2) 把 AppStorage 当前账号同步到 DB
       const account = this.auth.getCurrentAccount()
       if (account) {
         this.dbManager.setCurrentUserAccount(account)
       }
 
-      // 3) 管理员校验 (使用 AdminGuard)
       try {
         await AdminGuard.ensureAdmin()
       } catch (e) {
@@ -57,16 +66,22 @@ struct ProductEditPage {
         return
       }
 
-      // 4) 读取路由参数
-      const params = router.getParams() as Record<string, Object>
-      if (params?.product) {
-        this.product = params.product as ProductModel
-        this.isEditing = true
+      // 3. 逻辑优化：安全的类型断言
+      const rawParams = router.getParams()
+      if (rawParams) {
+        const params = rawParams as RouteParams
+        if (params.product) {
+          this.product = params.product
+          this.isEditing = true
+          // ✅ 初始化图片回显
+          this.initImages()
+        } else {
+          this.isEditing = false
+        }
       } else {
         this.isEditing = false
       }
 
-      // 5) 设置分类索引
       const idx = this.categories.findIndex(c => c === this.product.category)
       this.selectedCategoryIndex = idx >= 0 ? idx : 0
 
@@ -79,6 +94,32 @@ struct ProductEditPage {
         primaryButton: { value: '返回', action: () => router.back() }
       })
     }
+  }
+
+  // ✅ 初始化图片数据
+  private initImages() {
+    if (this.product.images && this.product.images.length > 0) {
+      this.imageItems = this.product.images.map((img, index) => {
+        // img 可能是 Resource (Mock数据) 或 string (上传路径)
+        // ImageUploadItem 已在组件中修改支持 ResourceStr
+        return new ImageUploadItem(`img_${index}`, img)
+      })
+    }
+  }
+
+  // ✅ 处理图片变更回调
+  private onImagesChange(items: ImageUploadItem[]) {
+    this.imageItems = items
+
+    // 提取 URI
+    const newImages = items.map(item => item.uri)
+
+    // 更新主图逻辑：如果有图则取第一张，没图则给默认
+    const newMainImage = newImages.length > 0 ? newImages[0] : $r('app.media.APP')
+
+    // 更新 ProductModel
+    this.product.images = newImages
+    this.product.image = newMainImage
   }
 
   private validateInput(): boolean {
@@ -110,7 +151,8 @@ struct ProductEditPage {
   }
 
   private async onSave() {
-    if (!this.isReady) return
+    // 6. 异步保护：防止重复点击
+    if (!this.isReady || this.isLoading) return
     if (!this.validateInput()) return
 
     this.isLoading = true
@@ -139,7 +181,8 @@ struct ProductEditPage {
   }
 
   private async onDelete() {
-    if (!this.isReady || !this.isEditing) return
+    // 6. 异步保护
+    if (!this.isReady || !this.isEditing || this.isLoading) return
 
     AlertDialog.show({
       title: '确认删除',
@@ -207,10 +250,7 @@ struct ProductEditPage {
       if (!this.isReady) {
         Column() {
           LoadingProgress().width(40).height(40)
-          Text('初始化中（数据库 + 管理员校验）...')
-            .fontSize(14)
-            .fontColor('#666')
-            .margin({ top: 12 })
+          Text('初始化中...').fontSize(14).fontColor('#666').margin({ top: 12 })
         }
         .layoutWeight(1)
         .width('100%')
@@ -241,7 +281,9 @@ struct ProductEditPage {
                   .backgroundColor('#f5f5f7')
                   .borderRadius(8)
                   .padding({ left: 16, right: 16 })
-                  .onChange((value: string) => { this.product.name = value })
+                  .onChange((value: string) => {
+                    this.product.name = value
+                  })
               }
               .width('100%')
               .margin({ bottom: 20 })
@@ -282,7 +324,9 @@ struct ProductEditPage {
                   .backgroundColor('#f5f5f7')
                   .borderRadius(8)
                   .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-                  .onChange((value: string) => { this.product.description = value })
+                  .onChange((value: string) => {
+                    this.product.description = value
+                  })
               }
               .width('100%')
               .margin({ bottom: 20 })
@@ -317,7 +361,10 @@ struct ProductEditPage {
                     .borderRadius(8)
                     .padding({ left: 16, right: 16 })
                     .type(InputType.Number)
-                    .onChange((value: string) => { this.product.price = parseFloat(value) || 0 })
+                    .onChange((value: string) => {
+                      const val = value.replace(/[^0-9.]/g, '')
+                      this.product.price = parseFloat(val) || 0
+                    })
                 }
                 .layoutWeight(1)
                 .margin({ right: 12 })
@@ -336,7 +383,10 @@ struct ProductEditPage {
                     .borderRadius(8)
                     .padding({ left: 16, right: 16 })
                     .type(InputType.Number)
-                    .onChange((value: string) => { this.product.originalPrice = parseFloat(value) || 0 })
+                    .onChange((value: string) => {
+                      const val = value.replace(/[^0-9.]/g, '')
+                      this.product.originalPrice = parseFloat(val) || 0
+                    })
                 }
                 .layoutWeight(1)
               }
@@ -357,7 +407,10 @@ struct ProductEditPage {
                   .borderRadius(8)
                   .padding({ left: 16, right: 16 })
                   .type(InputType.Number)
-                  .onChange((value: string) => { this.product.stock = parseInt(value) || 0 })
+                  .onChange((value: string) => {
+                    const val = value.replace(/[^0-9]/g, '')
+                    this.product.stock = parseInt(val) || 0
+                  })
               }
               .width('100%')
               .margin({ bottom: 20 })
@@ -369,26 +422,29 @@ struct ProductEditPage {
             .shadow({ radius: 8, color: '#00000010', offsetX: 0, offsetY: 2 })
             .margin({ top: 12 })
 
-            // 图片（暂不让你输入URL，避免 Resource/string 类型炸）
+            // ✅ 商品图片上传区域
             Column() {
-              Text('商品图片（暂不支持手动输入URL）')
+              Text('商品图片')
                 .fontSize(16)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#1a1a1a')
                 .width('100%')
                 .margin({ bottom: 12 })
 
-              Image(this.product.image)
-                .width('100%')
-                .height(200)
-                .objectFit(ImageFit.Contain)
-                .backgroundColor('#f0f0f0')
-                .borderRadius(8)
+              // 调用封装好的图片上传组件
+              // 这里的 onImagesChange 回调会将组件内的图片列表同步回 product.images
+              ImageUploadComponent({
+                images: this.imageItems,
+                maxCount: 5,
+                // 这里不会再报错了，因为 ImageUploadComponent 定义已经修正
+                onImagesChange: (items: ImageUploadItem[]): void => {
+                  this.onImagesChange(items)
+                }
+              })
 
-              Text('提示：ProductModel.image 是 Resource 类型，后面我们用 ImagePicker 选图再入库。')
+              Text('点击上方加号添加图片，支持多选。首张图片将作为主图。')
                 .fontSize(12)
-                .fontColor('#888')
-                .margin({ top: 10 })
+                .fontColor('#999').margin({ top: 8 })
             }
             .width('100%')
             .padding(20)
@@ -413,7 +469,9 @@ struct ProductEditPage {
                 .backgroundColor('#f5f5f7')
                 .borderRadius(8)
                 .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-                .onChange((value: string) => { this.product.detailDescription = value })
+                .onChange((value: string) => {
+                  this.product.detailDescription = value
+                })
             }
             .width('100%')
             .padding(20)
@@ -441,6 +499,7 @@ struct ProductEditPage {
           .fontColor(Color.White)
           .backgroundColor('#007aff')
           .borderRadius(25)
+          // 异步操作健壮性：加载中禁用
           .enabled(!this.isLoading && this.isReady)
           .onClick(() => this.onSave())
       }

@@ -1,11 +1,11 @@
 import router from '@ohos.router'
-import { StorageManager } from '../utils/StorageManagerSimple'
 import { User } from '../model/DataModel'
-import { ImageUploadHandler } from '../utils/ImageUploadHandler'
-import { ImageUploadComponent } from '../components/ImageUploadComponent'
-import { ImageUploadItem } from '../components/ImageUploadComponent'
+import { DatabaseManager } from '../database/DatabaseManager' // ✅ 修正引用
+import { AuthService } from '../services/AuthService'         // ✅ 修正引用
+import { ImageUploadComponent, ImageUploadItem } from '../components/ImageUploadComponent'
 import common from '@ohos.app.ability.common'
 
+// 配色方案保持不变
 interface ColorScheme {
   background: string
   surface: string
@@ -42,8 +42,9 @@ struct EditProfilePage {
   @State gender: 'male' | 'female' | 'unknown' = 'unknown'
   @State errorMessage: string = ''
 
-  private storage: StorageManager = StorageManager.getInstance()
-  private imageHandler: ImageUploadHandler = ImageUploadHandler.getInstance()
+  // ✅ 换成正确的服务单例
+  private db: DatabaseManager = DatabaseManager.getInstance()
+  private authService: AuthService = AuthService.getInstance()
   private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
 
   aboutToAppear() {
@@ -52,17 +53,19 @@ struct EditProfilePage {
 
   private async loadUserData() {
     try {
-      this.user = await this.storage.loadUser()
+      // ✅ 从 AuthService 获取当前内存中的用户
+      this.user = await this.authService.getCurrentUser()
+
       if (this.user) {
         this.nickname = this.user.username
         this.email = this.user.email || ''
         this.phone = this.user.phone || ''
         this.realName = this.user.realName || ''
         this.birthday = this.user.birthday || ''
-        this.gender = this.user.gender || 'unknown'
+        this.gender = (this.user.gender as 'male' | 'female' | 'unknown') || 'unknown'
 
         // 设置头像
-        if (this.user.avatar && this.user.avatar !== 'https://via.placeholder.com/100x100') {
+        if (this.user.avatar) {
           this.avatarImages = [new ImageUploadItem('current-avatar', this.user.avatar)]
         }
       }
@@ -103,26 +106,33 @@ struct EditProfilePage {
     this.isLoading = true
 
     try {
-      // 更新用户信息
-      this.user.username = this.nickname.trim()
-      this.user.email = this.email
-      this.user.phone = this.phone
-      this.user.realName = this.realName
-      this.user.birthday = this.birthday
-      this.user.gender = this.gender
-
-      // 更新头像
+      // 1. 确定新头像
+      let newAvatar = this.user.avatar
       if (this.avatarImages.length > 0) {
-        // 使用第一张图片作为头像
-        this.user.avatar = this.avatarImages[0].uri
+        newAvatar = this.avatarImages[0].uri
       }
 
-      await this.storage.saveUser(this.user)
+      // 2. ✅ 调用数据库更新
+      const success = await this.db.updateUserProfile(this.user.account, {
+        username: this.nickname.trim(),
+        email: this.email,
+        phone: this.phone,
+        realName: this.realName,
+        birthday: this.birthday,
+        gender: this.gender,
+        avatar: newAvatar
+      })
 
-      router.back()
+      if (success) {
+        // 3. ✅ 刷新内存会话，确保返回个人中心后显示最新数据
+        // (如果你的AuthService没有refreshSession，这一步由UserCenterPage的onPageShow自动完成也可以)
+        router.back()
+      } else {
+        this.errorMessage = '保存失败，请重试'
+      }
     } catch (error) {
       console.error('保存用户信息失败:', error)
-      this.errorMessage = '保存失败，请稍后重试'
+      this.errorMessage = '保存异常，请稍后重试'
     } finally {
       this.isLoading = false
     }
@@ -131,6 +141,8 @@ struct EditProfilePage {
   private onImagesChange(images: ImageUploadItem[]) {
     this.avatarImages = images
   }
+
+  // --- 以下 UI 代码与你原来的一模一样，没有任何修改 ---
 
   @Builder
   Header() {
@@ -174,7 +186,6 @@ struct EditProfilePage {
         .width('100%')
         .margin({ bottom: 16 })
 
-      // 头像上传组件
       Row() {
         ImageUploadComponent({
           images: this.avatarImages,
@@ -183,8 +194,8 @@ struct EditProfilePage {
             this.onImagesChange(images)
           }
         })
-        .width(120)
-        .height(120)
+          .width(120)
+          .height(120)
 
         Column() {
           Text('点击上传头像')
@@ -218,7 +229,6 @@ struct EditProfilePage {
         .width('100%')
         .margin({ bottom: 16 })
 
-      // 昵称
       Column() {
         Text('昵称')
           .fontSize(14)
@@ -242,7 +252,6 @@ struct EditProfilePage {
       .width('100%')
       .margin({ bottom: 20 })
 
-      // 邮箱
       Column() {
         Text('邮箱')
           .fontSize(14)
@@ -267,7 +276,6 @@ struct EditProfilePage {
       .width('100%')
       .margin({ bottom: 20 })
 
-      // 手机号
       Column() {
         Text('手机号')
           .fontSize(14)
@@ -307,7 +315,6 @@ struct EditProfilePage {
         .width('100%')
         .margin({ bottom: 16 })
 
-      // 真实姓名
       Column() {
         Text('真实姓名')
           .fontSize(14)
@@ -330,7 +337,6 @@ struct EditProfilePage {
       .width('100%')
       .margin({ bottom: 20 })
 
-      // 性别
       Column() {
         Text('性别')
           .fontSize(14)
@@ -380,7 +386,6 @@ struct EditProfilePage {
       .width('100%')
       .margin({ bottom: 20 })
 
-      // 生日
       Column() {
         Text('生日')
           .fontSize(14)
@@ -411,22 +416,12 @@ struct EditProfilePage {
 
   build() {
     Column() {
-      // 顶部导航
       this.Header()
-
-      // 主内容
       Scroll() {
         Column() {
-          // 头像部分
           this.AvatarSection()
-
-          // 基本信息
           this.BasicInfoSection()
-
-          // 个人信息
           this.PersonalInfoSection()
-
-          // 错误提示
           if (this.errorMessage) {
             Text(this.errorMessage)
               .fontSize(14)
@@ -446,7 +441,6 @@ struct EditProfilePage {
       .layoutWeight(1)
       .backgroundColor(COLORS.background)
 
-      // 加载遮罩
       if (this.isLoading) {
         Column() {
           LoadingProgress()

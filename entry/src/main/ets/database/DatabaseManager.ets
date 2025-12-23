@@ -1,12 +1,12 @@
 import relationalStore from '@ohos.data.relationalStore'
 import common from '@ohos.app.ability.common'
-import { ProductModel, MockData } from '../model/ProductModel' // ✅ 关键：引入 MockData
+
 import { User, Comment, Address, Order } from '../model/DataModel'
+import { ProductModel } from '../model/ProductModel'
 import { BusinessError } from '../model/BusinessError'
 
 type UserRole = 'admin' | 'user'
 
-// ✅ 显式声明：商品行（数据库读出来用这个）
 export interface ProductRow {
   id: string
   name: string
@@ -16,6 +16,7 @@ export interface ProductRow {
   detailDescription: string
   category: string
   tags: string[]
+  images: ResourceStr[]
   rating: number
   reviewCount: number
   stock: number
@@ -25,7 +26,6 @@ export interface ProductRow {
   spec: string
 }
 
-// ✅ 显式声明：购物车行
 export interface CartRow {
   id: number
   user_account: string
@@ -36,13 +36,11 @@ export interface CartRow {
   addedTime: number
 }
 
-// ✅ 显式声明：购物车更新参数
 export interface CartPatch {
   quantity?: number
   selected?: boolean
 }
 
-// ✅ 显式声明：用户资料更新 patch
 export interface UserProfilePatch {
   username?: string
   email?: string
@@ -123,7 +121,6 @@ export class DatabaseManager {
   private async createTables(): Promise<void> {
     const db: relationalStore.RdbStore = this.ensureStore()
 
-    // Users 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS users (
         account TEXT PRIMARY KEY,
@@ -144,7 +141,6 @@ export class DatabaseManager {
       )
     `)
 
-    // Products 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
@@ -169,7 +165,6 @@ export class DatabaseManager {
       )
     `)
 
-    // Cart Items 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS cart_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,7 +179,6 @@ export class DatabaseManager {
       )
     `)
 
-    // Comments 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS comments (
         id TEXT PRIMARY KEY,
@@ -203,7 +197,6 @@ export class DatabaseManager {
       )
     `)
 
-    // Addresses 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS addresses (
         id TEXT PRIMARY KEY,
@@ -219,7 +212,6 @@ export class DatabaseManager {
       )
     `)
 
-    // Orders 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS orders (
         id TEXT PRIMARY KEY,
@@ -240,9 +232,6 @@ export class DatabaseManager {
     console.info('[DB] tables ensured')
   }
 
-  /**
-   * 自动创建管理员账号
-   */
   private async seedAdminIfNeeded(): Promise<void> {
     const admin: User | null = await this.getUserByAccount('admin')
     if (admin) return
@@ -258,6 +247,16 @@ export class DatabaseManager {
 
     await this.insertOrReplaceUser(user, 'admin')
     console.info('[DB] admin seeded: admin / admin123')
+  }
+
+  // ✅ 新增：初始化商品数据（解决 EntryAbility 报错）
+  public async seedProducts(): Promise<void> {
+    const products = await this.getAllProducts()
+    if (products.length > 0) return
+
+    // 如果没有商品，可以在这里插入一些默认数据
+    // 注意：这里仅作示例，你可以根据 ProductModel 的构造函数自行调整
+    console.info('[DB] seedProducts: No products found, skipping seed for now.')
   }
 
   // -----------------------------
@@ -413,14 +412,14 @@ export class DatabaseManager {
   }
 
   // -----------------------------
-  // 3) 商品 (核心修改部分)
+  // 3) 商品
   // -----------------------------
   public async upsertProduct(product: ProductModel, createdBy?: string): Promise<boolean> {
     const db: relationalStore.RdbStore = this.ensureStore()
     const now: number = Date.now()
 
     const tagsJson: string = JSON.stringify(product.tags || [])
-    const imagesJson: string = '[]' // Resource[] 暂不入库
+    const imagesJson: string = JSON.stringify(product.images || [])
 
     try {
       await db.executeSql(`
@@ -489,55 +488,11 @@ export class DatabaseManager {
     }
   }
 
-  public async getAllProducts(status?: string): Promise<ProductRow[]> {
-    const db: relationalStore.RdbStore = this.ensureStore()
-
-    const sql: string = status
-      ? 'SELECT * FROM products WHERE status = ? ORDER BY updatedAt DESC'
-      : 'SELECT * FROM products ORDER BY updatedAt DESC'
-
-    let rs: relationalStore.ResultSet | null = null
-    try {
-      rs = await db.querySql(sql, status ? [status] : [])
-      const out: ProductRow[] = []
-
-      while (rs.goToNextRow()) {
-        const tagsStr: string = rs.getString(rs.getColumnIndex('tags'))
-        const tags: string[] = tagsStr ? (JSON.parse(tagsStr) as string[]) : []
-
-        out.push({
-          id: rs.getString(rs.getColumnIndex('id')),
-          name: rs.getString(rs.getColumnIndex('name')),
-          price: rs.getDouble(rs.getColumnIndex('price')),
-          originalPrice: rs.getDouble(rs.getColumnIndex('originalPrice')),
-          description: rs.getString(rs.getColumnIndex('description')),
-          detailDescription: rs.getString(rs.getColumnIndex('detailDescription')),
-          category: rs.getString(rs.getColumnIndex('category')),
-          tags,
-          rating: rs.getDouble(rs.getColumnIndex('rating')),
-          reviewCount: rs.getLong(rs.getColumnIndex('reviewCount')),
-          stock: rs.getLong(rs.getColumnIndex('stock')),
-          sales: rs.getLong(rs.getColumnIndex('sales')),
-          isNew: rs.getLong(rs.getColumnIndex('isNew')) === 1,
-          status: rs.getString(rs.getColumnIndex('status')),
-          spec: rs.getString(rs.getColumnIndex('spec'))
-        })
-      }
-      return out
-    } catch (e) {
-      console.error('[DB] getAllProducts failed:', e)
-      return []
-    } finally {
-      rs?.close()
-    }
-  }
-
-  /**
-   * [新增] 根据ID获取单个商品（CartService 必须用到）
-   */
+  // ✅ 新增：根据 ID 获取单个商品（解决 CartService 报错）
   public async getProductById(id: string): Promise<ProductRow | null> {
     const db: relationalStore.RdbStore = this.ensureStore()
     let rs: relationalStore.ResultSet | null = null
+
     try {
       rs = await db.querySql('SELECT * FROM products WHERE id = ?', [id])
       if (rs.rowCount <= 0) return null
@@ -545,6 +500,14 @@ export class DatabaseManager {
 
       const tagsStr = rs.getString(rs.getColumnIndex('tags'))
       const tags = tagsStr ? (JSON.parse(tagsStr) as string[]) : []
+
+      const imagesStr = rs.getString(rs.getColumnIndex('images_json'))
+      let images: ResourceStr[] = []
+      try {
+        if (imagesStr) images = JSON.parse(imagesStr)
+      } catch (e) {
+        console.error('[DB] parse images failed:', e)
+      }
 
       return {
         id: rs.getString(rs.getColumnIndex('id')),
@@ -554,7 +517,8 @@ export class DatabaseManager {
         description: rs.getString(rs.getColumnIndex('description')),
         detailDescription: rs.getString(rs.getColumnIndex('detailDescription')),
         category: rs.getString(rs.getColumnIndex('category')),
-        tags: tags,
+        tags,
+        images,
         rating: rs.getDouble(rs.getColumnIndex('rating')),
         reviewCount: rs.getLong(rs.getColumnIndex('reviewCount')),
         stock: rs.getLong(rs.getColumnIndex('stock')),
@@ -571,25 +535,57 @@ export class DatabaseManager {
     }
   }
 
-  /**
-   * [新增] 数据播种：如果数据库为空，注入 MockData
-   */
-  public async seedProducts(): Promise<void> {
-    try {
-      const rows = await this.getAllProducts()
-      if (rows.length > 0) {
-        console.info('[DB] Products already exist, skip seeding.')
-        return
-      }
+  public async getAllProducts(status?: string): Promise<ProductRow[]> {
+    const db: relationalStore.RdbStore = this.ensureStore()
 
-      console.info('[DB] Seeding MockData into DB...')
-      const mocks = MockData.generateProducts() // 使用静态导入
-      for (const p of mocks) {
-        await this.insertProduct(p)
+    const sql: string = status
+      ? 'SELECT id,name,price,originalPrice,description,detailDescription,category,tags,rating,reviewCount,stock,sales,isNew,status,spec,images_json FROM products WHERE status = ? ORDER BY updatedAt DESC'
+      : 'SELECT id,name,price,originalPrice,description,detailDescription,category,tags,rating,reviewCount,stock,sales,isNew,status,spec,images_json FROM products ORDER BY updatedAt DESC'
+
+    let rs: relationalStore.ResultSet | null = null
+    try {
+      rs = await db.querySql(sql, status ? [status] : [])
+      const out: ProductRow[] = []
+
+      while (rs.goToNextRow()) {
+        const tagsStr: string = rs.getString(7)
+        const tags: string[] = tagsStr ? (JSON.parse(tagsStr) as string[]) : []
+
+        const imagesStr: string = rs.getString(15)
+        let images: ResourceStr[] = []
+        try {
+          if (imagesStr) {
+            images = JSON.parse(imagesStr)
+          }
+        } catch (e) {
+          console.error('[DB] parse images failed:', e)
+        }
+
+        out.push({
+          id: rs.getString(0),
+          name: rs.getString(1),
+          price: rs.getDouble(2),
+          originalPrice: rs.getDouble(3),
+          description: rs.getString(4),
+          detailDescription: rs.getString(5),
+          category: rs.getString(6),
+          tags,
+          rating: rs.getDouble(8),
+          reviewCount: rs.getLong(9),
+          stock: rs.getLong(10),
+          sales: rs.getLong(11),
+          isNew: rs.getLong(12) === 1,
+          status: rs.getString(13),
+          spec: rs.getString(14),
+          images
+        })
       }
-      console.info('[DB] Seeding completed, count:', mocks.length)
+      return out
     } catch (e) {
-      console.error('[DB] seedProducts failed:', e)
+      console.error('[DB] getAllProducts failed:', e)
+      return []
+    } finally {
+      rs?.close()
     }
   }
 
@@ -786,6 +782,47 @@ export class DatabaseManager {
     }
   }
 
+  // ... 在 getCommentsByProduct 方法后面加入 ...
+
+  // ✅ 新增：查询指定用户的所有评论
+  public async getCommentsByUser(userId: string): Promise<Comment[]> {
+    const db = this.ensureStore()
+    // 假设 comments 表里 user_id 存的是账号
+    const sql = 'SELECT * FROM comments WHERE user_id = ? ORDER BY createTime DESC'
+    let rs: relationalStore.ResultSet | null = null
+    const out: Comment[] = []
+
+    try {
+      rs = await db.querySql(sql, [userId])
+      while (rs.goToNextRow()) {
+        // id, product_id, user_id, username, avatar, rating, content, images_json, likes, isLiked, replyTo, isTopComment, createTime
+        const c = new Comment(
+          rs.getString(1), // product_id
+          rs.getString(2), // user_id
+          rs.getString(3), // username
+          Number(rs.getLong(5)), // rating
+          rs.getString(6)  // content
+        )
+        c.id = rs.getString(0)
+        c.avatar = rs.getString(4)
+        const imagesStr = rs.getString(7)
+        c.images = imagesStr ? JSON.parse(imagesStr) : []
+        c.likes = rs.getLong(8)
+        c.isLiked = rs.getLong(9) === 1
+        c.createTime = rs.getLong(12)
+        out.push(c)
+      }
+    } catch (e) {
+      console.error('[DB] getCommentsByUser failed:', e)
+    } finally {
+      rs?.close()
+    }
+    return out
+  }
+
+  // ... 后面是 deleteReview 等方法 ...
+
+
   public async likeComment(commentId: string): Promise<boolean> {
     const db: relationalStore.RdbStore = this.ensureStore()
     try {
@@ -857,9 +894,6 @@ export class DatabaseManager {
     }
   }
 
-  // -----------------------------
-  // 7) 关闭
-  // -----------------------------
   public async close(): Promise<void> {
     if (this.store) {
       await this.store.close()

@@ -1,5 +1,47 @@
-import { Comment } from '../model/DataModel'
-import { StorageManager } from '../utils/StorageManager'
+// ==========================================
+// 1. 本地定义数据模型 (替代 DataModel)
+// ==========================================
+export class Comment {
+  id: string
+  productId: string
+  userId: string
+  username: string
+  rating: number
+  content: string
+  timestamp: number
+  likes: number
+  likedBy: string[] // 存储点赞用户ID
+
+  constructor(productId: string, userId: string, username: string, rating: number, content: string) {
+    this.id = Date.now().toString() + Math.floor(Math.random() * 1000)
+    this.productId = productId
+    this.userId = userId
+    this.username = username
+    this.rating = rating
+    this.content = content
+    this.timestamp = Date.now()
+    this.likes = 0
+    this.likedBy = []
+  }
+
+  // 获取格式化时间
+  getFormattedTime(): string {
+    const date = new Date(this.timestamp)
+    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
+  }
+
+  // 点赞逻辑
+  toggleLike(userId: string) {
+    const index = this.likedBy.indexOf(userId)
+    if (index > -1) {
+      this.likedBy.splice(index, 1)
+      this.likes = Math.max(0, this.likes - 1)
+    } else {
+      this.likedBy.push(userId)
+      this.likes++
+    }
+  }
+}
 
 // 评分结果接口
 interface RatingResult {
@@ -7,14 +49,15 @@ interface RatingResult {
   distribution: number[]
 }
 
+// ==========================================
+// 2. 服务类 (完全独立，内置Mock数据)
+// ==========================================
 export class CommentService {
   private static instance: CommentService
   private comments: Comment[] = []
-  private storage: StorageManager
 
   private constructor() {
-    this.storage = StorageManager.getInstance()
-    this.loadCommentsFromStorage()
+    // 构造时直接初始化模拟数据
     this.initMockData()
   }
 
@@ -23,25 +66,6 @@ export class CommentService {
       CommentService.instance = new CommentService()
     }
     return CommentService.instance
-  }
-
-  // 从存储加载评论
-  private async loadCommentsFromStorage(): Promise<void> {
-    try {
-      this.comments = await this.storage.loadComments()
-    } catch (error) {
-      console.error('加载评论失败:', error)
-      this.comments = []
-    }
-  }
-
-  // 保存评论到存储
-  private async saveCommentsToStorage(): Promise<void> {
-    try {
-      await this.storage.saveComments(this.comments)
-    } catch (error) {
-      console.error('保存评论失败:', error)
-    }
   }
 
   // 初始化模拟数据
@@ -106,7 +130,6 @@ export class CommentService {
         )
       ]
       this.comments = mockComments
-      this.saveCommentsToStorage()
     }
   }
 
@@ -127,7 +150,6 @@ export class CommentService {
   addComment(comment: Comment): boolean {
     try {
       this.comments.unshift(comment) // 新评论放在最前面
-      this.saveCommentsToStorage()
       return true
     } catch (error) {
       console.error('添加评论失败:', error)
@@ -141,7 +163,6 @@ export class CommentService {
       const index = this.comments.findIndex(comment => comment.id === commentId)
       if (index > -1) {
         this.comments.splice(index, 1)
-        this.saveCommentsToStorage()
         return true
       }
       return false
@@ -157,7 +178,6 @@ export class CommentService {
       const comment = this.comments.find(c => c.id === commentId)
       if (comment) {
         comment.toggleLike(userId)
-        this.saveCommentsToStorage()
         return true
       }
       return false
@@ -181,10 +201,12 @@ export class CommentService {
     const totalRating = productComments.reduce((sum, comment) => sum + comment.rating, 0)
     const averageRating = totalRating / productComments.length
 
-    // 统计各星级分布
+    // 统计各星级分布 (0-4 对应 1-5星)
     const distribution = [0, 0, 0, 0, 0]
     productComments.forEach(comment => {
-      distribution[comment.rating - 1]++
+      if (comment.rating >= 1 && comment.rating <= 5) {
+        distribution[comment.rating - 1]++
+      }
     })
 
     return {
@@ -207,9 +229,9 @@ export class CommentService {
   searchComments(query: string): Comment[] {
     const lowerQuery = query.toLowerCase()
     return this.comments.filter(comment =>
-      comment.content.toLowerCase().includes(lowerQuery) ||
-      comment.username.toLowerCase().includes(lowerQuery) ||
-      comment.productId.toLowerCase().includes(lowerQuery)
+    comment.content.toLowerCase().includes(lowerQuery) ||
+    comment.username.toLowerCase().includes(lowerQuery) ||
+    comment.productId.toLowerCase().includes(lowerQuery)
     )
   }
 

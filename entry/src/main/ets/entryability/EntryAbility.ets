@@ -15,13 +15,15 @@ export default class EntryAbility extends UIAbility {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
-  // ✅ 修复：去掉 async，保持标准签名
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    // 调用内部异步初始化
-    this.initServices();
+    // 调用内部异步初始化，并捕获可能的错误
+    this.initServices().catch((err: Error) => {
+      hilog.error(0x0000, 'testTag', 'Init services failed: %{public}s', JSON.stringify(err) ?? '');
+    });
 
+    // 这里加载 SplashScreen 是正确的，SplashScreen 会负责跳转到 Index
     windowStage.loadContent('pages/SplashScreen', (err) => {
       if (err.code) {
         hilog.error(0x0000, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err) ?? '');
@@ -31,7 +33,7 @@ export default class EntryAbility extends UIAbility {
     });
   }
 
-  // ✅ 封装异步初始化逻辑
+  // 封装异步初始化逻辑
   private async initServices(): Promise<void> {
     try {
       const context = this.context as common.UIAbilityContext;
@@ -40,14 +42,14 @@ export default class EntryAbility extends UIAbility {
       await DatabaseManager.getInstance().init(context);
       // 2. 播种数据
       await DatabaseManager.getInstance().seedProducts();
-      // 3. 初始化用户服务 (现在 AuthService 有 init 方法了)
+      // 3. 初始化用户服务
       await AuthService.getInstance().init();
       // 4. 初始化购物车
       await CartService.getInstance().init();
 
-      console.info('All services initialized successfully');
+      hilog.info(0x0000, 'testTag', 'All services initialized successfully');
     } catch (error) {
-      console.error('Service initialization failed:', JSON.stringify(error));
+      hilog.error(0x0000, 'testTag', 'Service initialization failed: %{public}s', JSON.stringify(error));
     }
   }
 

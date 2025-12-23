@@ -1,120 +1,119 @@
 import { ProductModel } from '../model/ProductModel'
 
+// 定义带高度属性的包装对象接口
+interface WaterfallItemData {
+  product: ProductModel;
+  cardHeight: number; // 对应修改变量名
+}
+
 @Component
 export struct WaterfallFlow {
   @Prop products: ProductModel[]
-  @State columns: number = 2
-  @State itemWidth: number = 0
-  @State itemHeights: number[] = []
-  @State items: { product: ProductModel; height: number }[] = []
+  @State leftItems: WaterfallItemData[] = []
+  @State rightItems: WaterfallItemData[] = []
 
   aboutToAppear() {
     this.calculateLayout()
   }
 
+  onPageShow() {
+    this.calculateLayout()
+  }
+
   private calculateHeight(product: ProductModel): number {
-    // 基础高度
-    let height = 300
-
-    // 根据图片数量调整高度
+    let h = 300
     if (product.images && product.images.length > 0) {
-      height += product.images.length * 80
+      h += product.images.length * 80
     }
-
-    // 根据标题长度调整
     if (product.name && product.name.length > 10) {
-      height += Math.floor(product.name.length / 15) * 20
+      h += Math.floor(product.name.length / 15) * 20
     }
-
-    // 随机变化模拟不同高度
-    height += Math.floor(Math.random() * 100)
-
-    return height
+    h += Math.floor(Math.random() * 100)
+    return h
   }
 
   private calculateLayout() {
-    if (this.products.length === 0) return
+    if (!this.products || this.products.length === 0) return
 
-    // 计算每个产品的显示高度
-    this.items = this.products.map(product => ({
-      product: product,
-      height: this.calculateHeight(product)
-    }))
+    const tempLeft: WaterfallItemData[] = []
+    const tempRight: WaterfallItemData[] = []
+    let leftHeight = 0
+    let rightHeight = 0
 
-    // 模拟瀑布流排列算法
-    const columnHeights: number[] = [0, 0]
-    const arrangedItems: { product: ProductModel; height: number; column: number; top: number }[] = []
+    for (const product of this.products) {
+      const itemHeight = this.calculateHeight(product)
 
-    for (const item of this.items) {
-      // 找到最短的列
-      let minColumn = 0
-      let minHeight = columnHeights[0]
-
-      for (let i = 1; i < this.columns; i++) {
-        if (columnHeights[i] < minHeight) {
-          minColumn = i
-          minHeight = columnHeights[i]
-        }
+      if (leftHeight <= rightHeight) {
+        tempLeft.push({ product: product, cardHeight: itemHeight })
+        leftHeight += itemHeight + 12
+      } else {
+        tempRight.push({ product: product, cardHeight: itemHeight })
+        rightHeight += itemHeight + 12
       }
-
-      // 放置到最短的列
-      arrangedItems.push({
-        product: item.product,
-        height: item.height,
-        column: minColumn,
-        top: columnHeights[minColumn]
-      })
-
-      columnHeights[minColumn] += item.height + 12 // 12px为间距
     }
 
-    this.items = arrangedItems
+    this.leftItems = tempLeft
+    this.rightItems = tempRight
   }
 
   build() {
-    Column() {
-      ForEach(this.items, (item: { product: ProductModel; height: number; column: number; top: number }, index: number) => {
-        Column() {
-          WaterfallItem({ product: item.product, height: item.height })
-        }
-        .width('48%')
-        .margin({
-          left: item.column === 0 ? '2%' : '1%',
-          right: item.column === 0 ? '1%' : '2%',
-          top: index === 0 || item.top === 0 ? 0 : 0,
-          bottom: 12
-        })
-        .backgroundColor($r('app.color.white'))
-        .borderRadius(8)
-        .shadow({
-          radius: 4,
-          color: '#1A000000',
-          offsetX: 0,
-          offsetY: 2
-        })
-      }, (item) => item.product.id)
+    Row({ space: 10 }) {
+      // 左侧列
+      Column() {
+        ForEach(this.leftItems, (item: WaterfallItemData) => {
+          Column() {
+            // 这里传参改为 tileHeight
+            WaterfallItem({ product: item.product, tileHeight: item.cardHeight })
+          }
+          .width('100%')
+          .margin({ bottom: 12 })
+          .backgroundColor($r('app.color.white'))
+          .borderRadius(8)
+          .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
+        }, (item: WaterfallItemData) => item.product.id)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
+
+      // 右侧列
+      Column() {
+        ForEach(this.rightItems, (item: WaterfallItemData) => {
+          Column() {
+            // 这里传参改为 tileHeight
+            WaterfallItem({ product: item.product, tileHeight: item.cardHeight })
+          }
+          .width('100%')
+          .margin({ bottom: 12 })
+          .backgroundColor($r('app.color.white'))
+          .borderRadius(8)
+          .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
+        }, (item: WaterfallItemData) => item.product.id)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
     }
     .width('100%')
     .padding(16)
+    .alignItems(VerticalAlign.Top)
   }
 }
 
 @Component
 struct WaterfallItem {
   @Prop product: ProductModel
-  @Prop height: number
+  // 核心修改：重命名变量，解决 "Property 'height' ... is not assignable" 报错
+  @Prop tileHeight: number
 
   build() {
     Column() {
-      // 商品图片
       Image(this.product.image)
         .width('100%')
-        .height(this.product.height || 200)
+        // 核心修改：删除 this.product.height，因为它在 Model 中不存在
+        .height(200)
         .borderRadius({ topLeft: 8, topRight: 8 })
         .objectFit(ImageFit.Cover)
         .backgroundColor($r('app.color.background'))
 
-      // 商品信息
       Column() {
         Text(this.product.name)
           .fontSize(14)
@@ -156,7 +155,6 @@ struct WaterfallItem {
       .layoutWeight(1)
       .justifyContent(FlexAlign.SpaceBetween)
 
-      // 操作按钮
       Row() {
         Button('加入购物车')
           .height(32)
@@ -166,7 +164,6 @@ struct WaterfallItem {
           .borderRadius(16)
           .padding({ left: 12, right: 12 })
           .onClick(() => {
-            // 这里添加购物车逻辑
             console.log('加入购物车:', this.product.name)
           })
       }
@@ -174,5 +171,6 @@ struct WaterfallItem {
       .padding({ left: 12, right: 12, bottom: 12 })
       .justifyContent(FlexAlign.End)
     }
+    // 使用传入的高度，或者让内容自适应。如果需要强制高度，这里使用 .height(this.tileHeight)
   }
 }
