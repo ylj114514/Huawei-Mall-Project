@@ -1,11 +1,13 @@
 import router from '@ohos.router'
+import promptAction from '@ohos.promptAction' // 建议导入用于弹窗提示
 import { User } from '../model/DataModel'
-import { DatabaseManager } from '../database/DatabaseManager' // ✅ 修正引用
-import { AuthService } from '../services/AuthService'         // ✅ 修正引用
+// ✅ 修复1：补充导入 UserProfilePatch
+import { DatabaseManager, UserProfilePatch } from '../database/DatabaseManager'
+import { AuthService } from '../services/AuthService'
 import { ImageUploadComponent, ImageUploadItem } from '../components/ImageUploadComponent'
 import common from '@ohos.app.ability.common'
 
-// 配色方案保持不变
+// 配色方案 (保持不变)
 interface ColorScheme {
   background: string
   surface: string
@@ -42,7 +44,6 @@ struct EditProfilePage {
   @State gender: 'male' | 'female' | 'unknown' = 'unknown'
   @State errorMessage: string = ''
 
-  // ✅ 换成正确的服务单例
   private db: DatabaseManager = DatabaseManager.getInstance()
   private authService: AuthService = AuthService.getInstance()
   private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
@@ -53,15 +54,15 @@ struct EditProfilePage {
 
   private async loadUserData() {
     try {
-      // ✅ 从 AuthService 获取当前内存中的用户
       this.user = await this.authService.getCurrentUser()
 
       if (this.user) {
-        this.nickname = this.user.username
+        this.nickname = this.user.username || ''
         this.email = this.user.email || ''
         this.phone = this.user.phone || ''
         this.realName = this.user.realName || ''
         this.birthday = this.user.birthday || ''
+        // 类型断言，确保类型匹配
         this.gender = (this.user.gender as 'male' | 'female' | 'unknown') || 'unknown'
 
         // 设置头像
@@ -100,20 +101,25 @@ struct EditProfilePage {
     return true
   }
 
+  // ✅ 修复2：重写 saveProfile 方法，解决类型和空值报错
   private async saveProfile() {
-    if (!this.validateForm() || !this.user) return
+    const currentUser = this.user // 使用局部变量
+    if (!this.validateForm() || !currentUser) return
 
     this.isLoading = true
 
     try {
       // 1. 确定新头像
-      let newAvatar = this.user.avatar
+      let newAvatar = currentUser.avatar
       if (this.avatarImages.length > 0) {
-        newAvatar = this.avatarImages[0].uri
+        const uri = this.avatarImages[0].uri
+        if (typeof uri === 'string') {
+          newAvatar = uri
+        }
       }
 
-      // 2. ✅ 调用数据库更新
-      const success = await this.db.updateUserProfile(this.user.account, {
+      // 2. 构建更新对象 (明确类型 UserProfilePatch)
+      const patch: UserProfilePatch = {
         username: this.nickname.trim(),
         email: this.email,
         phone: this.phone,
@@ -121,17 +127,26 @@ struct EditProfilePage {
         birthday: this.birthday,
         gender: this.gender,
         avatar: newAvatar
-      })
+      }
+
+      // 3. 调用数据库更新
+      const success = await this.db.updateUserProfile(currentUser.account, patch)
 
       if (success) {
-        // 3. ✅ 刷新内存会话，确保返回个人中心后显示最新数据
-        // (如果你的AuthService没有refreshSession，这一步由UserCenterPage的onPageShow自动完成也可以)
-        router.back()
+        // 使用 promptAction 提示（如果导入了的话），或者是 this.errorMessage
+        // 这里为了兼容性使用 errorMessage 显示成功也可以，或者保持原有逻辑
+        try {
+          promptAction.showToast({ message: '保存成功' })
+        } catch(e) {}
+
+        setTimeout(() => {
+          router.back()
+        }, 500)
       } else {
         this.errorMessage = '保存失败，请重试'
       }
     } catch (error) {
-      console.error('保存用户信息失败:', error)
+      console.error('保存用户信息失败:', JSON.stringify(error))
       this.errorMessage = '保存异常，请稍后重试'
     } finally {
       this.isLoading = false
@@ -142,7 +157,7 @@ struct EditProfilePage {
     this.avatarImages = images
   }
 
-  // --- 以下 UI 代码与你原来的一模一样，没有任何修改 ---
+  // --- 以下 UI 代码保持完全不变 ---
 
   @Builder
   Header() {

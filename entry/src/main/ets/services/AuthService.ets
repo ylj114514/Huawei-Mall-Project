@@ -1,17 +1,26 @@
 import router from '@ohos.router'
+import { DatabaseManager } from '../database/DatabaseManager'
+import { User } from '../model/DataModel'
 
 /**
  * 认证服务类 (单例模式)
- * 职责：管理当前登录用户的会话状态 (Session)
- * 说明：具体的登录/注册/数据存储逻辑已迁移至 DatabaseManager
+ * 职责：
+ * 1. 管理当前登录用户的会话状态 (Session) - 使用 AppStorage 持久化
+ * 2. 作为 DatabaseManager 的上层封装，提供简便的用户数据获取接口
  */
 export class AuthService {
   private static instance: AuthService
-  private currentAccount: string = ''
-  private isLogin: boolean = false
+  // 定义 AppStorage 中存储 Key 的常量
+  private static readonly KEY_CURRENT_ACCOUNT: string = 'currentAccount'
 
-  private constructor() { }
+  // 引用数据库管理器实例
+  private db: DatabaseManager = DatabaseManager.getInstance()
 
+  private constructor() {}
+
+  /**
+   * 获取单例实例
+   */
   public static getInstance(): AuthService {
     if (!AuthService.instance) {
       AuthService.instance = new AuthService()
@@ -20,50 +29,79 @@ export class AuthService {
   }
 
   /**
-   * 设置当前登录账号
-   * 在 DatabaseManager 验证通过后调用此方法保存会话
+   * ✅ 核心修复：初始化方法
+   * 作用：EntryAbility 启动时调用，用于恢复上次的应用会话状态
    */
-  public setCurrentAccount(account: string) {
-    this.currentAccount = account
-    this.isLogin = true
-    // 将账号保存到全局 AppStorage，方便其他页面（如个人中心）获取
-    AppStorage.SetOrCreate('currentAccount', account)
+  public async init(): Promise<void> {
+    // 尝试从全局内存存储中恢复上次登录的账号
+    const account = AppStorage.Get<string>(AuthService.KEY_CURRENT_ACCOUNT)
+    if (account) {
+      // 如果有缓存账号，同步设置到数据库管理器的当前用户状态中
+      this.db.setCurrentUserAccount(account)
+      console.info('[AuthService] Init: Session restored for account:', account)
+    } else {
+      console.info('[AuthService] Init: No active session found')
+    }
   }
 
   /**
-   * 获取当前登录账号
+   * 设置当前登录账号 (登录/注册成功后调用)
+   */
+  public setCurrentAccount(account: string): void {
+    // 1. 保存到全局 AppStorage，确保页面刷新或跳转后状态不丢失
+    AppStorage.SetOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, account)
+    // 2. 同步设置数据库上下文
+    this.db.setCurrentUserAccount(account)
+  }
+
+  /**
+   * 清除当前账号 (退出登录时调用)
+   */
+  public clearCurrentAccount(): void {
+    AppStorage.SetOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, '')
+    this.db.setCurrentUserAccount(null)
+  }
+
+  /**
+   * 获取当前登录的账号字符串
    */
   public getCurrentAccount(): string {
-    // 优先从内存获取，如果内存为空尝试从 AppStorage 恢复 (应对页面刷新)
-    if (!this.currentAccount) {
-      this.currentAccount = AppStorage.Get('currentAccount') || ''
-      this.isLogin = !!this.currentAccount
-    }
-    return this.currentAccount
+    return AppStorage.Get<string>(AuthService.KEY_CURRENT_ACCOUNT) || ''
   }
 
   /**
-   * 检查是否已登录
+   * ✅ 核心修复：获取完整的当前用户对象
+   * 作用：UserCenterPage 等页面调用，用于显示头像、昵称等详细信息
+   */
+  public async getCurrentUser(): Promise<User | null> {
+    const account = this.getCurrentAccount()
+    if (!account) return null
+    // 委托给 DatabaseManager 从数据库查询完整信息
+    return await this.db.getUserByAccount(account)
+  }
+
+  /**
+   * ✅ 核心修复：退出登录
+   */
+  public logout(): void {
+    this.clearCurrentAccount()
+    // 强制跳转回登录页
+    router.replaceUrl({ url: 'pages/LoginPage' })
+  }
+
+  /**
+   * 检查是否已登录 (用于路由守卫或UI判断)
    */
   public isLoggedIn(): boolean {
     return !!this.getCurrentAccount()
   }
 
   /**
-   * 退出登录
+   * 检查当前用户是否为管理员 (用于显示后台入口)
    */
-  public logout() {
-    this.currentAccount = ''
-    this.isLogin = false
-    AppStorage.SetOrCreate('currentAccount', '')
-    // 跳转回登录页
-    router.replaceUrl({ url: 'pages/LoginPage' })
-  }
-
-  /**
-   * 检查是否是管理员 (根据账号名判断的简单逻辑，可扩展)
-   */
-  public isAdmin(): boolean {
-    return this.getCurrentAccount() === 'admin'
+  public async isAdmin(): Promise<boolean> {
+    const account = this.getCurrentAccount()
+    if (!account) return false
+    return this.db.isAdmin(account)
   }
 }
