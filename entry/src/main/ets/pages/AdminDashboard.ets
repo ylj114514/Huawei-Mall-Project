@@ -1,7 +1,7 @@
 import router from '@ohos.router'
 import { DatabaseManager } from '../database/DatabaseManager'
-
 import { ProductModel, MockData } from '../model/ProductModel'
+import common from '@ohos.app.ability.common'
 
 interface Statistics {
   total: number
@@ -26,15 +26,59 @@ struct AdminDashboard {
     this.loadData()
   }
 
+  // 页面显示时刷新数据
+  onPageShow() {
+    this.loadData()
+  }
+
   private async loadData() {
     try {
       this.isLoading = true
-      await this.dbManager.initialize()
-      this.products = await this.dbManager.getAllProducts()
+      // ✅ 1. 获取上下文并初始化 DB
+      const context = getContext(this) as common.UIAbilityContext
+      await this.dbManager.init(context)
+
+      // ✅ 2. 获取数据
+      const rows = await this.dbManager.getAllProducts()
+      const mockProducts = MockData.generateProducts() // 用于恢复图片
+
+      // ✅ 3. 转换逻辑 (严格匹配你的 ProductModel 构造函数)
+      this.products = rows.map(row => {
+        // 尝试找回 Resource 图片
+        const match = mockProducts.find(m => m.id === row.id)
+        const images = match ? match.images : [$r('app.media.APP')]
+
+        // 构造函数参数顺序：
+        // id, name, price, originalPrice, description, detailDescription, images, category, tags, rating, reviewCount, stock
+        const p = new ProductModel(
+          row.id,
+          row.name,
+          row.price,
+          row.originalPrice,
+          row.description,
+          row.detailDescription,
+          images, // ✅ 传入 Resource[]
+          row.category,
+          row.tags,
+          row.rating,
+          row.reviewCount,
+          row.stock
+        )
+
+        // 补全其他字段
+        p.image = images.length > 0 ? images[0] : $r('app.media.APP')
+        p.sales = row.sales
+        p.isNew = row.isNew
+        p.status = row.status
+        return p
+      })
+
       this.filteredProducts = this.products
+      // 重新应用当前的搜索/筛选
+      this.filterProducts()
       this.calculateStatistics()
     } catch (error) {
-      console.error('加载数据失败:', error)
+      console.error('加载后台数据失败:', error)
     } finally {
       this.isLoading = false
     }
@@ -56,8 +100,8 @@ struct AdminDashboard {
     if (this.searchText.trim() !== '') {
       const query = this.searchText.toLowerCase()
       filtered = filtered.filter(product =>
-        product.name.toLowerCase().includes(query) ||
-        product.description.toLowerCase().includes(query)
+      product.name.toLowerCase().includes(query) ||
+      (product.description || '').toLowerCase().includes(query)
       )
     }
 
@@ -101,8 +145,9 @@ struct AdminDashboard {
           fontColor: '#ff4444',
           action: async () => {
             try {
-              await this.dbManager.deleteProduct(parseInt(product.id))
-              console.log('商品删除成功')
+              // ✅ 修正：使用 setProductStatus 软删除，直接传字符串ID，不转换 parseInt
+              await this.dbManager.setProductStatus(product.id, 'deleted')
+              console.info('商品删除成功')
               this.loadData()
             } catch (error) {
               console.error('删除失败:', error)
@@ -114,6 +159,8 @@ struct AdminDashboard {
       console.error('删除操作失败:', error)
     }
   }
+
+  // --- UI 部分 (原封不动) ---
 
   @Builder
   StatisticsCard() {

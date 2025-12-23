@@ -1,28 +1,15 @@
-import { ProductModel } from '../model/ProductModel'
-import { CartItem } from '../model/DataModel'
-import { StorageManager } from '../utils/StorageManager'
+import { CartItem } from '../model/DataModel' // 确保引用正确的 Model
+import { ProductModel, MockData } from '../model/ProductModel'
+import { DatabaseManager, CartRow, ProductRow } from '../database/DatabaseManager'
 
-// 购物车存储项接口
-interface CartStorageItem {
-  productId: string
-  quantity: number
-  selected: boolean
-  addedTime: number
-}
-
-/**
- * 购物车服务类
- * 使用本地数据库实现数据持久化
- */
 export class CartService {
   private static instance: CartService
-  private cartItems: CartItem[] = []
-  private storage: StorageManager
-  private initialized: boolean = false
+  private db: DatabaseManager = DatabaseManager.getInstance()
 
-  private constructor() {
-    this.storage = StorageManager.getInstance()
-  }
+  // 内存缓存，用于 UI 渲染
+  private cartItems: CartItem[] = []
+
+  private constructor() {}
 
   public static getInstance(): CartService {
     if (!CartService.instance) {
@@ -32,341 +19,163 @@ export class CartService {
   }
 
   /**
-   * 初始化购物车服务
+   * 初始化：从数据库加载购物车数据
    */
   public async init(): Promise<void> {
-    if (!this.initialized) {
-      await this.loadCartFromStorage()
-      this.initialized = true
-    }
+    await this.refreshCart()
   }
 
   /**
-   * 从存储加载购物车
+   * 核心方法：从 DB 读取数据并刷新内存
    */
-  private async loadCartFromStorage(): Promise<void> {
+  public async refreshCart(): Promise<void> {
     try {
-      const storedItems = await this.storage.loadCartRawData()
-      // 需要将存储的数据重新构建为CartItem对象，包含ProductModel
-      this.cartItems = []
+      const account = this.db.getCurrentUserAccount()
+      // 如果没登录，购物车为空
+      if (!account) {
+        this.cartItems = []
+        return
+      }
 
-      // 这里需要根据实际的产品模型来重建完整的CartItem
-      // 由于存储中只有productId和quantity，我们需要从ProductModel中获取完整信息
-      const productModule = await import('../model/ProductModel')
-      const allProducts = productModule.MockData.generateProducts()
+      // 1. 获取数据库里的购物车数据
+      const rows: CartRow[] = await this.db.getCartRows()
+      const newItems: CartItem[] = []
 
-      for (const storedItem of storedItems as CartStorageItem[]) {
-        const product = allProducts.find(p => p.id === storedItem.productId)
-        if (product) {
-          const cartItem = new CartItem(product, storedItem.quantity)
-          cartItem.selected = storedItem.selected || false
-          cartItem.addedTime = storedItem.addedTime || Date.now()
-          this.cartItems.push(cartItem)
+      // 2. 准备 Mock 数据用于恢复图片资源 (因为数据库存不了 Resource)
+      const mockProducts = MockData.generateProducts()
+
+      for (const row of rows) {
+        let productModel: ProductModel | null = null
+
+        // 尝试从 DB 获取最新商品信息
+        const dbP = await this.db.getProductById(row.product_id)
+
+        if (dbP) {
+          // 将 DB 行转为 Model
+          productModel = this.mapRowToProductModel(dbP)
+
+          // 尝试从 MockData 找回 Resource 类型的图片
+          const mockP = mockProducts.find(m => m.id === row.product_id)
+          if (mockP && mockP.images) {
+            productModel.images = mockP.images
+            productModel.image = mockP.image
+          }
+        }
+
+        if (productModel) {
+          const item = new CartItem(productModel, row.quantity)
+          item.id = row.id.toString()
+          item.selected = row.selected
+          item.addedTime = row.addedTime
+          newItems.push(item)
         }
       }
 
-      console.log('购物车已从数据库加载:', this.cartItems.length, '个商品')
-    } catch (error) {
-      console.error('加载购物车失败:', error)
-      this.cartItems = []
+      this.cartItems = newItems
+      console.info('[CartService] Refreshed count:', this.cartItems.length)
+
+    } catch (e) {
+      console.error('[CartService] refreshCart failed:', e)
     }
   }
 
-  /**
-   * 保存购物车到存储
-   */
-  private async saveCartToStorage(): Promise<void> {
-    try {
-      await this.storage.saveCart(this.cartItems)
-      console.log('购物车已保存到数据库')
-    } catch (error) {
-      console.error('保存购物车失败:', error)
-    }
+  // 辅助：DB行转对象
+  private mapRowToProductModel(row: ProductRow): ProductModel {
+    const p = new ProductModel(
+      row.id, row.name, row.price, row.originalPrice,
+      row.description, row.detailDescription,
+      [], // images 暂空
+      row.category, row.tags,
+      row.rating, row.reviewCount, row.stock
+    )
+    p.sales = row.sales
+    p.isNew = row.isNew
+    return p
   }
 
-  /**
-   * 确保已初始化
-   */
-  private async ensureInitialized(): Promise<void> {
-    if (!this.initialized) {
-      await this.init()
-    }
-  }
+  // ================= 业务操作 (直接写库) =================
 
-  /**
-   * 添加商品到购物车
-   */
   public async addToCart(product: ProductModel, quantity: number = 1): Promise<boolean> {
-    await this.ensureInitialized()
-
     try {
-      // 检查是否已存在相同商品
-      const existingItem = this.cartItems.find(item => item.product.id === product.id)
-
-      if (existingItem) {
-        // 如果已存在，增加数量
-        const newQuantity = existingItem.quantity + quantity
-        if (newQuantity <= product.stock) {
-          existingItem.quantity = newQuantity
-        } else {
-          return false // 库存不足
-        }
-      } else {
-        // 如果不存在，添加新项
-        const cartItem = new CartItem(product, quantity)
-        this.cartItems.push(cartItem)
+      const success = await this.db.addToCart(product.id, quantity, product.spec || '标准版')
+      if (success) {
+        await this.refreshCart()
       }
-
-      await this.saveCartToStorage()
-      return true
-    } catch (error) {
-      console.error('添加到购物车失败:', error)
+      return success
+    } catch (e) {
+      console.error('addToCart failed:', e)
       return false
     }
   }
 
-  /**
-   * 从购物车移除商品
-   */
-  public async removeFromCart(cartItemId: string): Promise<void> {
-    await this.ensureInitialized()
-
+  public async removeFromCart(cartItemId: string): Promise<boolean> {
     try {
-      const index = this.cartItems.findIndex(item => item.id === cartItemId)
-      if (index > -1) {
-        this.cartItems.splice(index, 1)
-        await this.saveCartToStorage()
-      }
-    } catch (error) {
-      console.error('从购物车移除商品失败:', error)
+      const id = parseInt(cartItemId)
+      const success = await this.db.removeCartItem(id)
+      if (success) await this.refreshCart()
+      return success
+    } catch (e) {
+      return false
     }
   }
 
-  /**
-   * 更新商品数量
-   */
   public async updateQuantity(cartItemId: string, quantity: number): Promise<boolean> {
-    await this.ensureInitialized()
-
     try {
-      const item = this.cartItems.find(item => item.id === cartItemId)
-      if (item && quantity > 0 && quantity <= item.product.stock) {
-        item.quantity = quantity
-        await this.saveCartToStorage()
-        return true
-      }
-      return false
-    } catch (error) {
-      console.error('更新商品数量失败:', error)
+      const id = parseInt(cartItemId)
+      const success = await this.db.updateCartItem(id, { quantity })
+      if (success) await this.refreshCart()
+      return success
+    } catch (e) {
       return false
     }
   }
 
-  /**
-   * 切换选中状态
-   */
-  public async toggleSelected(cartItemId: string): Promise<void> {
-    await this.ensureInitialized()
-
+  public async toggleSelected(cartItemId: string): Promise<boolean> {
+    const item = this.cartItems.find(i => i.id === cartItemId)
+    if (!item) return false
     try {
-      const item = this.cartItems.find(item => item.id === cartItemId)
-      if (item) {
-        item.selected = !item.selected
-        await this.saveCartToStorage()
+      const id = parseInt(cartItemId)
+      const success = await this.db.updateCartItem(id, { selected: !item.selected })
+      if (success) await this.refreshCart()
+      return success
+    } catch (e) {
+      return false
+    }
+  }
+
+  public async toggleAllSelected(selected: boolean): Promise<boolean> {
+    // 简单循环更新
+    for (const item of this.cartItems) {
+      if (item.selected !== selected) {
+        await this.toggleSelected(item.id)
       }
-    } catch (error) {
-      console.error('切换选中状态失败:', error)
     }
+    return true
   }
 
-  /**
-   * 全选/全不选
-   */
-  public async toggleAllSelected(selected: boolean): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      this.cartItems.forEach(item => {
-        item.selected = selected
-      })
-      await this.saveCartToStorage()
-    } catch (error) {
-      console.error('切换全选状态失败:', error)
-    }
+  public async clearCart(): Promise<boolean> {
+    const success = await this.db.clearCart()
+    if (success) await this.refreshCart()
+    return success
   }
 
-  /**
-   * 获取购物车商品列表
-   */
+  // ================= 获取数据 =================
+
   public getCartItems(): CartItem[] {
-    return [...this.cartItems]
+    return this.cartItems
   }
 
-  /**
-   * 获取选中的商品
-   */
   public getSelectedItems(): CartItem[] {
-    return this.cartItems.filter(item => item.selected)
+    return this.cartItems.filter(i => i.selected)
   }
 
-  /**
-   * 获取选中商品的数量
-   */
-  public getSelectedCount(): number {
-    return this.cartItems.filter(item => item.selected).length
-  }
-
-  /**
-   * 获取购物车总数量
-   */
-  public getTotalCount(): number {
-    return this.cartItems.reduce((total, item) => total + item.quantity, 0)
-  }
-
-  /**
-   * 计算选中商品总价
-   */
-  public getSelectedTotal(): number {
-    return this.getSelectedItems().reduce((total, item) => total + item.getSubtotal(), 0)
-  }
-
-  /**
-   * 计算购物车总价
-   */
   public getTotalAmount(): number {
-    return this.cartItems.reduce((total, item) => total + item.getSubtotal(), 0)
+    return this.cartItems
+      .filter(item => item.selected)
+      .reduce((sum, item) => sum + (item.product.price * item.quantity), 0)
   }
 
-  /**
-   * 检查是否有选中的商品
-   */
-  public hasSelectedItems(): boolean {
-    return this.cartItems.some(item => item.selected)
-  }
-
-  /**
-   * 检查购物车是否为空
-   */
-  public isEmpty(): boolean {
-    return this.cartItems.length === 0
-  }
-
-  /**
-   * 清空购物车
-   */
-  public async clearCart(): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      this.cartItems = []
-      await this.saveCartToStorage()
-    } catch (error) {
-      console.error('清空购物车失败:', error)
-    }
-  }
-
-  /**
-   * 清空选中的商品（结算后调用）
-   */
-  public async clearSelected(): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      this.cartItems = this.cartItems.filter(item => !item.selected)
-      await this.saveCartToStorage()
-    } catch (error) {
-      console.error('清空选中商品失败:', error)
-    }
-  }
-
-  /**
-   * 获取无效商品（库存不足等）
-   */
-  public getInvalidItems(): CartItem[] {
-    return this.cartItems.filter(item => !item.isValid())
-  }
-
-  /**
-   * 移除无效商品
-   */
-  public async removeInvalidItems(): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      this.cartItems = this.cartItems.filter(item => item.isValid())
-      await this.saveCartToStorage()
-    } catch (error) {
-      console.error('移除无效商品失败:', error)
-    }
-  }
-
-  /**
-   * 检查商品是否在购物车中
-   */
-  public isProductInCart(productId: string): boolean {
-    return this.cartItems.some(item => item.product.id === productId)
-  }
-
-  /**
-   * 获取购物车中的商品数量
-   */
-  public getProductQuantity(productId: string): number {
-    const item = this.cartItems.find(item => item.product.id === productId)
-    return item ? item.quantity : 0
-  }
-
-  // =================== 兼容性方法 ===================
-
-  /**
-   * 同步方法（为了向后兼容，建议使用异步版本）
-   */
-  addToCartSync(product: ProductModel, quantity: number = 1): boolean {
-    this.addToCart(product, quantity).catch((error: Error) => {
-      console.error('同步添加到购物车失败:', error)
-    })
-    return true // 假设成功
-  }
-
-  removeFromCartSync(cartItemId: string): void {
-    this.removeFromCart(cartItemId).catch((error: Error) => {
-      console.error('同步从购物车移除失败:', error)
-    })
-  }
-
-  updateQuantitySync(cartItemId: string, quantity: number): boolean {
-    this.updateQuantity(cartItemId, quantity).catch((error: Error) => {
-      console.error('同步更新数量失败:', error)
-    })
-    return true // 假设成功
-  }
-
-  toggleSelectedSync(cartItemId: string): void {
-    this.toggleSelected(cartItemId).catch((error: Error) => {
-      console.error('同步切换选中状态失败:', error)
-    })
-  }
-
-  toggleAllSelectedSync(selected: boolean): void {
-    this.toggleAllSelected(selected).catch((error: Error) => {
-      console.error('同步切换全选状态失败:', error)
-    })
-  }
-
-  clearCartSync(): void {
-    this.clearCart().catch((error: Error) => {
-      console.error('同步清空购物车失败:', error)
-    })
-  }
-
-  clearSelectedSync(): void {
-    this.clearSelected().catch((error: Error) => {
-      console.error('同步清空选中商品失败:', error)
-    })
-  }
-
-  removeInvalidItemsSync(): void {
-    this.removeInvalidItems().catch((error: Error) => {
-      console.error('同步移除无效商品失败:', error)
-    })
+  public getTotalCount(): number {
+    return this.cartItems.reduce((sum, item) => sum + item.quantity, 0)
   }
 }

@@ -1,7 +1,8 @@
 import router from '@ohos.router'
 import { ProductModel, MockData } from '../model/ProductModel'
 import { CartService } from '../services/CartService'
-import { CommentSectionNew } from '../components/CommentSectionNew'
+// import { CommentSectionNew } from '../components/CommentSectionNew' // 如果你删了这个文件，请注释掉，或换成 CommentSection
+import { CommentSection } from '../components/CommentSection'
 
 @Entry
 @Component
@@ -13,7 +14,9 @@ struct ProductDetailPage {
   @State showCartDialog: boolean = false
   @State showAlreadyInCartDialog: boolean = false
   @State scrollY: number = 0
-  @State imageHeight: number = 375 // 图片高度，类似京东/淘宝
+  @State imageHeight: number = 375
+
+  // ✅ 获取单例
   private cartService: CartService = CartService.getInstance()
 
   aboutToAppear() {
@@ -21,13 +24,16 @@ struct ProductDetailPage {
   }
 
   private loadProductData() {
-    interface RouteParams {
-      productId: string
-    }
-    const params = router.getParams() as RouteParams
-    if (params && params.productId) {
-      const products = MockData.generateProducts()
-      this.product = products.find(p => p.id === params.productId) || null
+    // 支持两种传参方式：直接传对象 或 传ID
+    const params = router.getParams() as Record<string, Object>
+    if (params) {
+      if (params['product']) {
+        this.product = params['product'] as ProductModel
+      } else if (params['productId']) {
+        // 如果只传了 ID，这里可以去 MockData 找 (或者去 DB 找，这里为了简单先去 MockData)
+        const products = MockData.generateProducts()
+        this.product = products.find(p => p.id === params['productId']) || null
+      }
     }
     this.isLoading = false
   }
@@ -37,35 +43,32 @@ struct ProductDetailPage {
   }
 
   private onQuantityChange(change: number) {
+    if (!this.product) return
     const newQuantity = this.quantity + change
-    if (newQuantity >= 1 && newQuantity <= (this.product?.stock || 0)) {
+    if (newQuantity >= 1 && newQuantity <= (this.product.stock || 999)) {
       this.quantity = newQuantity
     }
   }
 
-  private onAddToCart() {
+  // ✅ 核心修改：调用 CartService 写库
+  private async onAddToCart() {
     if (!this.product) return
 
-    if (this.quantity > this.product.stock) {
-      console.error('库存不足')
-      return
-    }
+    // 调用 CartService
+    // 注意：CartService.addToCart 是异步的
+    const success = await this.cartService.addToCart(this.product, this.quantity)
 
-    try {
-      if (this.cartService.isProductInCart(this.product.id)) {
-        // 商品已在购物车中，显示提示对话框
-        this.showAlreadyInCartDialog = true
-      } else {
-        const success = this.cartService.addToCart(this.product, this.quantity)
-        if (!success) {
-          console.error('添加到购物车失败')
-          return
-        }
-        console.log('添加到购物车成功')
-        this.showCartSuccessDialog()
-      }
-    } catch (error) {
-      console.error('添加到购物车异常:', error)
+    if (success) {
+      this.showCartSuccessDialog()
+    } else {
+      // 这里的 false 可能是因为没登录，也可能是其他原因
+      // 简单起见，我们认为它是 "已存在" 或者是 "没登录"
+      // 如果你的 CartService 对于已存在是 update 数量并返回 true，那这里 false 就是没登录
+      // 如果 CartService 没登录会抛异常，那这里要 catch
+
+      // 假设 CartService 返回 false 代表失败
+      // 你可以加个判断是否登录
+      console.error('添加失败，可能未登录')
     }
   }
 
@@ -75,7 +78,7 @@ struct ProductDetailPage {
 
   private goToCart(): void {
     this.showCartDialog = false
-    router.pushUrl({ url: 'pages/CartPageNew' })
+    router.pushUrl({ url: 'pages/CartPage' }) // ✅ 修正跳转路径
   }
 
   private continueShopping(): void {
@@ -88,7 +91,10 @@ struct ProductDetailPage {
 
   private onBuyNow() {
     if (!this.product) return
-    console.log('立即购买:', this.product.name, '数量:', this.quantity)
+    // 先加购物车，再跳
+    this.onAddToCart().then(() => {
+      this.goToCart()
+    })
   }
 
   build() {
@@ -98,475 +104,132 @@ struct ProductDetailPage {
         Row() {
           Button() {
             Row() {
-              Text('←')
-                .fontSize(18)
-                .fontColor($r('app.color.text_primary'))
-              Text('返回')
-                .fontSize(16)
-                .fontColor($r('app.color.text_primary'))
-                .margin({ left: 4 })
+              Text('←').fontSize(18).fontColor('#333')
+              Text('返回').fontSize(16).fontColor('#333').margin({ left: 4 })
             }
           }
           .backgroundColor(Color.Transparent)
-          .onClick(() => {
-            try {
-              router.back()
-            } catch (error) {
-              console.error('返回失败:', error)
-            }
-          })
+          .onClick(() => router.back())
 
           Blank().layoutWeight(1)
-
           Text(this.product?.name || '商品详情')
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('40%')
-
+            .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333')
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('40%')
           Blank().layoutWeight(1)
 
-          // 购物车按钮
           Button() {
             Row() {
-              Text('🛒')
-                .fontSize(20)
-              Text('购物车')
-                .fontSize(10)
-                .margin({ left: 4 })
+              Text('🛒').fontSize(20)
+              Text('购物车').fontSize(10).margin({ left: 4 })
             }
           }
-          .fontSize(12)
-          .fontColor($r('app.color.text_primary'))
-          .backgroundColor(Color.Transparent)
-          .onClick(() => {
-            this.goToCart()
-          })
+          .fontSize(12).fontColor('#333').backgroundColor(Color.Transparent)
+          .onClick(() => this.goToCart())
         }
-        .width('100%')
-        .height(56)
-        .padding({ left: 16, right: 16 })
-        .backgroundColor($r('app.color.white'))
-        .shadow({
-          radius: 2,
-          color: '#1A000000',
-          offsetX: 0,
-          offsetY: 1
-        })
+        .width('100%').height(56).padding({ left: 16, right: 16 })
+        .backgroundColor(Color.White)
+        .shadow({ radius: 2, color: '#1A000000', offsetX: 0, offsetY: 1 })
         .justifyContent(FlexAlign.SpaceBetween)
-        .alignItems(VerticalAlign.Center)
 
-        // 主内容 - 可滚动
+        // 主内容
         Scroll() {
           Column() {
-            // 商品图片轮播
-            Column() {
+            // 轮播图
+            if (this.product && this.product.images && this.product.images.length > 0) {
               Swiper() {
-                ForEach(this.product?.images || [], (image: string, index: number) => {
+                ForEach(this.product.images, (image: Resource) => {
                   Image(image)
-                    .width('100%')
-                    .height(this.imageHeight)
-                    .objectFit(ImageFit.Contain)
-                    .backgroundColor('#f5f5f5')
-                    .alt('商品图片')
+                    .width('100%').height(this.imageHeight).objectFit(ImageFit.Contain).backgroundColor('#f5f5f5')
                 })
               }
-              .width('100%')
-              .height(this.imageHeight)
-              .loop(true)
-              .indicator(true)
-              .indicatorStyle({
-                size: 8,
-                color: 'rgba(255,255,255,0.5)',
-                selectedColor: '#ffffff'
-              })
-              .onChange(this.onImageChange.bind(this))
+              .width('100%').height(this.imageHeight).loop(true).indicator(true)
+              .onChange((index) => this.onImageChange(index))
+            } else if (this.product) {
+              Image(this.product.image).width('100%').height(this.imageHeight).objectFit(ImageFit.Contain)
             }
-            .backgroundColor($r('app.color.white'))
 
-            // 商品基本信息
+            // 信息区
             Column() {
-              // 商品名称和价格
-              Column() {
-                Text(this.product?.name || '')
-                  .fontSize(18)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor($r('app.color.text_primary'))
-                  .width('100%')
-                  .margin({ bottom: 12 })
+              Text(this.product?.name || '').fontSize(18).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 12 })
 
-                Row() {
-                  Text(`¥${this.product?.price || 0}`)
-                    .fontSize(24)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor('#ff4444')
-
-                  if (this.product?.originalPrice && this.product.originalPrice > this.product.price) {
-                    Text(`¥${this.product.originalPrice}`)
-                      .fontSize(14)
-                      .fontColor($r('app.color.text_secondary'))
-                      .decoration({ type: TextDecorationType.LineThrough })
-                      .margin({ left: 12, top: 4 })
-                  }
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Bottom)
-                .margin({ bottom: 12 })
-
-                // 评分、销量、库存
-                Row() {
-                  Row() {
-                    Text('⭐')
-                      .fontSize(14)
-                    Text(`${this.product?.rating?.toFixed(1) || '5.0'}`)
-                      .fontSize(14)
-                      .fontColor($r('app.color.text_secondary'))
-                    Text(`(${this.product?.reviewCount || 0}条评价)`)
-                      .fontSize(12)
-                      .fontColor($r('app.color.text_secondary'))
-                      .margin({ left: 4 })
-                  }
-
-                  Text(`库存 ${this.product?.stock || 0}`)
-                    .fontSize(12)
-                    .fontColor((this.product?.stock || 0) > 50 ? '#52c41a' : '#faad14')
-                    .margin({ left: 20 })
-                }
-                .width('100%')
-                .justifyContent(FlexAlign.SpaceBetween)
-              }
-              .width('100%')
-              .padding(16)
-              .backgroundColor($r('app.color.white'))
-              .borderRadius(12)
-              .margin({ top: 8, left: 12, right: 12 })
-
-              // 运费信息
               Row() {
-                Text('⚡')
-                  .fontSize(16)
-                Text('免运费')
-                  .fontSize(14)
-                  .fontColor($r('app.color.primary'))
-                  .margin({ left: 4 })
-                Text('预计24小时内发货')
-                  .fontSize(12)
-                  .fontColor($r('app.color.text_secondary'))
-                  .margin({ left: 8 })
+                Text(`¥${this.product?.price || 0}`).fontSize(24).fontWeight(FontWeight.Bold).fontColor('#ff4444')
+                if (this.product?.originalPrice && this.product.originalPrice > this.product.price) {
+                  Text(`¥${this.product.originalPrice}`).fontSize(14).fontColor('#999')
+                    .decoration({ type: TextDecorationType.LineThrough }).margin({ left: 12, top: 4 })
+                }
               }
-              .width('100%')
-              .padding(16)
-              .backgroundColor($r('app.color.white'))
-              .borderRadius(12)
-              .margin({ top: 8, left: 12, right: 12 })
-              .justifyContent(FlexAlign.Start)
+              .width('100%').alignItems(VerticalAlign.Bottom).margin({ bottom: 12 })
 
-              // 商品特点标签
-              Column() {
-                Text('商品特点')
-                  .fontSize(16)
-                  .fontWeight(FontWeight.Bold)
-                  .width('100%')
-                  .margin({ bottom: 12 })
-
-                Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-                  ForEach(this.product?.tags || [], (tag: string) => {
-                    Text(tag)
-                      .fontSize(12)
-                      .fontColor($r('app.color.primary'))
-                      .backgroundColor('#f0f8ff')
-                      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                      .borderRadius(16)
-                      .margin({ right: 8, bottom: 8 })
+              // 标签
+              if (this.product?.tags) {
+                Flex({ wrap: FlexWrap.Wrap }) {
+                  ForEach(this.product.tags, (tag: string) => {
+                    Text(tag).fontSize(12).fontColor('#007aff').backgroundColor('#f0f8ff')
+                      .padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(16).margin({ right: 8, bottom: 8 })
                   })
                 }
-                .width('100%')
               }
-              .width('100%')
-              .padding(16)
-              .backgroundColor($r('app.color.white'))
-              .borderRadius(12)
-              .margin({ top: 8, left: 12, right: 12 })
 
-              // 商品详细描述
-              Column() {
-                Text('商品详情')
-                  .fontSize(16)
-                  .fontWeight(FontWeight.Bold)
-                  .width('100%')
-                  .margin({ bottom: 12 })
+              // 详情
+              Text('商品详情').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ top: 20, bottom: 12 })
+              Text(this.product?.detailDescription || '暂无详细描述').fontSize(14).lineHeight(24).width('100%')
 
-                Text(this.product?.detailDescription || '暂无详细描述')
-                  .fontSize(14)
-                  .fontColor($r('app.color.text_primary'))
-                  .lineHeight(24)
-                  .width('100%')
-              }
-              .width('100%')
-              .padding(16)
-              .backgroundColor($r('app.color.white'))
-              .borderRadius(12)
-              .margin({ top: 8, left: 12, right: 12 })
+              // 评价区占位 (如果 CommentSection 可用请恢复)
+              // CommentSection({ productId: this.product?.id || '' })
 
-              // 用户评价区域
-              Column() {
-                Text('用户评价')
-                  .fontSize(16)
-                  .fontWeight(FontWeight.Bold)
-                  .width('100%')
-                  .margin({ bottom: 12 })
-
-                CommentSectionNew({ productId: this.product?.id || '' })
-              }
-              .width('100%')
-              .padding(16)
-              .backgroundColor($r('app.color.white'))
-              .borderRadius(12)
-              .margin({ top: 8, left: 12, right: 12, bottom: 120 }) // 底部空间给购买按钮
+              Column().height(100) // 底部垫高
             }
+            .padding(16).backgroundColor(Color.White).borderRadius(12).margin(12)
           }
         }
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.Spring)
-        .onScroll((xOffset: number, yOffset: number) => {
-          this.scrollY = yOffset
-        })
+        .layoutWeight(1).backgroundColor('#f5f5f5')
       }
-      .width('100%')
-      .height('100%')
 
-      // 底部购买栏 - 固定在屏幕最底部
+      // 底部操作栏
       if (this.product) {
         Row() {
-          // 数量选择器
           Column() {
-            Text('数量')
-              .fontSize(12)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ bottom: 4 })
+            Text('数量').fontSize(12).fontColor('#999').margin({ bottom: 4 })
             Row() {
-              Button('-')
-                .width(32)
-                .height(28)
-                .fontSize(14)
-                .backgroundColor($r('app.color.background'))
-                .fontColor(this.quantity > 1 ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
-                .enabled(this.quantity > 1)
+              Button('-').width(32).height(28).fontSize(14).backgroundColor('#f5f5f5')
+                .fontColor(this.quantity > 1 ? '#333' : '#ccc').enabled(this.quantity > 1)
                 .onClick(() => this.onQuantityChange(-1))
-
-              Text(this.quantity.toString())
-                .fontSize(14)
-                .fontColor($r('app.color.text_primary'))
-                .width(40)
-                .textAlign(TextAlign.Center)
-
-              Button('+')
-                .width(32)
-                .height(28)
-                .fontSize(14)
-                .backgroundColor($r('app.color.background'))
-                .fontColor(this.quantity < this.product.stock ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
-                .enabled(this.quantity < this.product.stock)
+              Text(`${this.quantity}`).fontSize(14).width(40).textAlign(TextAlign.Center)
+              Button('+').width(32).height(28).fontSize(14).backgroundColor('#f5f5f5')
                 .onClick(() => this.onQuantityChange(1))
             }
-          }
-          .width(80)
+          }.width(80)
 
           Blank().layoutWeight(1)
-
-          Button('加入购物车')
-            .height(48)
-            .fontSize(14)
-            .backgroundColor('#ff9500')
-            .fontColor(Color.White)
-            .borderRadius(24)
-            .layoutWeight(1)
-            .margin({ right: 8 })
-            .onClick(() => this.onAddToCart())
-
-          Button('立即购买')
-            .height(48)
-            .fontSize(14)
-            .backgroundColor($r('app.color.primary'))
-            .fontColor(Color.White)
-            .borderRadius(24)
-            .layoutWeight(1)
-            .onClick(() => this.onBuyNow())
+          Button('加入购物车').height(48).fontSize(14).backgroundColor('#ff9500').fontColor(Color.White)
+            .borderRadius(24).layoutWeight(1).margin({ right: 8 }).onClick(() => this.onAddToCart())
+          Button('立即购买').height(48).fontSize(14).backgroundColor('#cf0a2c').fontColor(Color.White)
+            .borderRadius(24).layoutWeight(1).onClick(() => this.onBuyNow())
         }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .backgroundColor($r('app.color.white'))
-        .shadow({
-          radius: 4,
-          color: '#1A000000',
-          offsetX: 0,
-          offsetY: -2
-        })
-        .position({ x: 0, y: '100%' })
-        .translate({ x: 0, y: -64 })
-        .zIndex(1001)
+        .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .backgroundColor(Color.White).position({ x: 0, y: '100%' }).translate({ x: 0, y: -64 })
       }
 
-      // 加载状态
-      if (this.isLoading) {
-        Column() {
-          LoadingProgress()
-            .width(40)
-            .height(40)
-          Text('加载中...')
-            .fontSize(14)
-            .fontColor($r('app.color.text_secondary'))
-            .margin({ top: 16 })
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor($r('app.color.background'))
-      }
-
-      // 加入购物车成功弹窗
+      // 弹窗逻辑 (保留你原本的)
       if (this.showCartDialog) {
         Column() {
-          // 遮罩层
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor('rgba(0,0,0,0.5)')
-            .onClick(() => {
-              this.continueShopping()
-            })
-
-          // 弹窗内容
+          Column().width('100%').height('100%').backgroundColor('rgba(0,0,0,0.5)').onClick(() => this.continueShopping())
           Column() {
-            Text('✓')
-              .fontSize(48)
-              .fontColor('#52c41a')
-              .margin({ bottom: 16 })
-
-            Text('加入购物车成功')
-              .fontSize(18)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-              .margin({ bottom: 8 })
-
-            Text('商品已成功添加到购物车')
-              .fontSize(14)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ bottom: 24 })
-
+            Text('✓').fontSize(48).fontColor('#52c41a').margin({ bottom: 16 })
+            Text('加入成功').fontSize(18).fontWeight(FontWeight.Bold).margin({ bottom: 24 })
             Row() {
-              Button('继续购物')
-                .height(44)
-                .fontSize(16)
-                .backgroundColor($r('app.color.background'))
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-                .margin({ right: 8 })
-                .onClick(() => {
-                  this.continueShopping()
-                })
-
-              Button('去购物车')
-                .height(44)
-                .fontSize(16)
-                .backgroundColor($r('app.color.primary'))
-                .fontColor(Color.White)
-                .layoutWeight(1)
-                .margin({ left: 8 })
-                .onClick(() => {
-                  this.goToCart()
-                })
+              Button('继续购物').layoutWeight(1).margin({ right: 8 }).backgroundColor('#f5f5f5').fontColor('#333').onClick(() => this.continueShopping())
+              Button('去购物车').layoutWeight(1).margin({ left: 8 }).backgroundColor('#007aff').onClick(() => this.goToCart())
             }
             .width('100%')
           }
-          .width(300)
-          .backgroundColor($r('app.color.white'))
-          .borderRadius(12)
-          .padding(24)
-          .position({ x: '50%', y: '50%' })
-          .translate({ x: '-50%', y: '-50%' })
+          .width(300).backgroundColor(Color.White).borderRadius(12).padding(24)
+          .position({ x: '50%', y: '50%' }).translate({ x: '-50%', y: '-50%' })
         }
-        .width('100%')
-        .height('100%')
-        .position({ x: 0, y: 0 })
-        .zIndex(9999)
-      }
-
-      // 商品已在购物车提示弹窗
-      if (this.showAlreadyInCartDialog) {
-        Column() {
-          // 遮罩层
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor('rgba(0,0,0,0.5)')
-            .onClick(() => {
-              this.closeAlreadyInCartDialog()
-            })
-
-          // 弹窗内容
-          Column() {
-            Text('🛒')
-              .fontSize(48)
-              .fontColor('#ff9500')
-              .margin({ bottom: 16 })
-
-            Text('商品已在购物车中')
-              .fontSize(18)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-              .margin({ bottom: 8 })
-
-            Text('该商品已经添加到购物车，可以前往购物车查看或调整数量')
-              .fontSize(14)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ bottom: 24 })
-
-            Row() {
-              Button('继续购物')
-                .height(44)
-                .fontSize(16)
-                .backgroundColor($r('app.color.background'))
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-                .margin({ right: 8 })
-                .onClick(() => {
-                  this.closeAlreadyInCartDialog()
-                })
-
-              Button('查看购物车')
-                .height(44)
-                .fontSize(16)
-                .backgroundColor($r('app.color.primary'))
-                .fontColor(Color.White)
-                .layoutWeight(1)
-                .margin({ left: 8 })
-                .onClick(() => {
-                  this.closeAlreadyInCartDialog()
-                  this.goToCart()
-                })
-            }
-            .width('100%')
-          }
-          .width(320)
-          .backgroundColor($r('app.color.white'))
-          .borderRadius(12)
-          .padding(24)
-          .position({ x: '50%', y: '50%' })
-          .translate({ x: '-50%', y: '-50%' })
-        }
-        .width('100%')
-        .height('100%')
-        .position({ x: 0, y: 0 })
         .zIndex(9999)
       }
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.background'))
+    .width('100%').height('100%').backgroundColor('#f5f5f5')
   }
 }

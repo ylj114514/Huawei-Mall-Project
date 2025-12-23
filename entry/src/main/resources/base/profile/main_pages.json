@@ -1,10 +1,16 @@
 {
   "src": [
-    "pages/SplashScreenModern",
-    "pages/IndexNewModern",
-    "pages/ProfileModernFixed",
-    "pages/LoginPageModern",
-    "pages/ProductDetailFixed",
-    "pages/CartPage"
+    "pages/Index",
+    "pages/LoginPage",
+    "pages/ProductDetailPage",
+    "pages/UserCenterPage",
+    "pages/CartPage",
+    "pages/ProductEditPage",
+    "pages/AdminDashboard",
+    "pages/SearchResultPage",
+    "pages/MyReviewsPage",
+    "pages/AddressManagePage",
+    "pages/AddressEditPage",
+    "pages/SplashScreen"
   ]
 }

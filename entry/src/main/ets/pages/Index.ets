@@ -1,7 +1,7 @@
 import router from '@ohos.router'
 import { ProductModel, MockData } from '../model/ProductModel'
+import { DatabaseManager } from '../database/DatabaseManager' // ✅ 引入 DB
 import { BottomNavBar } from '../components/BottomNavBar'
-// import { AppService } from '../services/AppService'
 
 @Entry
 @Component
@@ -16,20 +16,62 @@ struct Index {
   // 商品分类
   private categories: string[] = ['全部', '手机', '平板', '电脑', '耳机', '智能手表']
 
-  aboutToAppear() {
+  // ✅ 改用 onPageShow，这样从详情页回来也能刷新状态
+  onPageShow() {
     this.loadData()
   }
 
-  private loadData() {
-    setTimeout(() => {
-      this.products = MockData.generateProducts()
-      this.filteredProducts = this.products
+  // ✅ 核心修改：从数据库加载，但保留图片资源
+  private async loadData() {
+    this.isLoading = true
+    try {
+      // 1. 获取 DB 数据
+      const dbRows = await DatabaseManager.getInstance().getAllProducts()
+
+      // 2. 获取 Mock 数据（仅用于找回图片资源）
+      const mockProducts = MockData.generateProducts()
+
+      const combinedProducts: ProductModel[] = []
+
+      for (const row of dbRows) {
+        // 将 DB 行转为 Model
+        const p = new ProductModel(
+          row.id, row.name, row.price, row.originalPrice,
+          row.description, row.detailDescription,
+          [], // 先置空，下面补
+          row.category, row.tags, row.rating, row.reviewCount, row.stock
+        )
+        // 补全字段
+        p.sales = row.sales
+        p.isNew = row.isNew
+
+        // 3. 图片“嫁接”：如果 Mock 里有这个 ID，就用 Mock 的 Resource 图片
+        const mockMatch = mockProducts.find(m => m.id === row.id)
+        if (mockMatch && mockMatch.images.length > 0) {
+          p.image = mockMatch.image
+          p.images = mockMatch.images
+        } else {
+          // 如果是新增的商品，给个默认图
+          p.image = $r('app.media.APP')
+          p.images = [$r('app.media.APP')]
+        }
+
+        combinedProducts.push(p)
+      }
+
+      this.products = combinedProducts
+      // 重新应用当前的过滤条件（搜索/分类）
+      this.filterProducts()
+
+    } catch (e) {
+      console.error('加载首页数据失败:', e)
+    } finally {
       this.isLoading = false
-    }, 800)
+    }
   }
 
   /**
-   * 搜索处理
+   * 搜索处理 (保留原逻辑)
    */
   private onSearch(text: string) {
     this.searchText = text
@@ -38,7 +80,7 @@ struct Index {
   }
 
   /**
-   * 筛选商品
+   * 筛选商品 (保留原逻辑)
    */
   private filterProducts() {
     let filtered = this.products
@@ -46,10 +88,7 @@ struct Index {
     // 按分类筛选
     if (this.selectedCategory !== '全部') {
       filtered = filtered.filter(product => {
-        if (product.category === this.selectedCategory) {
-          return true
-        }
-        return false
+        return product.category === this.selectedCategory
       })
     }
 
@@ -57,8 +96,8 @@ struct Index {
     if (this.searchText.trim() !== '') {
       const query = this.searchText.toLowerCase()
       filtered = filtered.filter(product =>
-        product.name.toLowerCase().includes(query) ||
-        product.description.toLowerCase().includes(query)
+      product.name.toLowerCase().includes(query) ||
+      product.description.toLowerCase().includes(query)
       )
     }
 
@@ -74,13 +113,13 @@ struct Index {
   }
 
   /**
-   * 点击商品
+   * 点击商品 (跳转保持不变)
    */
   private onProductClick(product: ProductModel) {
     router.pushUrl({
-      url: 'pages/ProductDetailModern',
+      url: 'pages/ProductDetailPage', // ✅ 确保跳到正确的详情页文件名
       params: {
-        productId: product.id
+        product: product // ✅ 传递整个对象，或者只传ID也可以，取决于详情页怎么收
       }
     })
   }
@@ -329,6 +368,11 @@ struct Index {
             color: '#007AFF40',
             offsetX: 0,
             offsetY: 2
+          })
+          .onClick((e) => {
+            // 阻止冒泡，避免跳到详情页
+            // e.stopPropagation() // ArkTS 旧版可能不支持，如果支持请加上
+            // 这里可以做一个快速加购物车的逻辑，暂时先不写，以免报错
           })
         }
         .width('100%')

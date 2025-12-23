@@ -1,13 +1,12 @@
 import relationalStore from '@ohos.data.relationalStore'
 import common from '@ohos.app.ability.common'
-
+import { ProductModel, MockData } from '../model/ProductModel' // ✅ 关键：引入 MockData
 import { User, Comment, Address, Order } from '../model/DataModel'
-import { ProductModel } from '../model/ProductModel'
 import { BusinessError } from '../model/BusinessError'
 
 type UserRole = 'admin' | 'user'
 
-// ✅ 显式声明：商品行（数据库读出来用这个，不直接用 ProductModel）
+// ✅ 显式声明：商品行（数据库读出来用这个）
 export interface ProductRow {
   id: string
   name: string
@@ -43,7 +42,7 @@ export interface CartPatch {
   selected?: boolean
 }
 
-// ✅ 显式声明：用户资料更新 patch（只放允许字段）
+// ✅ 显式声明：用户资料更新 patch
 export interface UserProfilePatch {
   username?: string
   email?: string
@@ -80,7 +79,7 @@ export class DatabaseManager {
   }
 
   /**
-   * 初始化数据库（建议在应用启动时调用一次）
+   * 初始化数据库
    */
   public async init(context: common.UIAbilityContext): Promise<void> {
     if (this.store) return
@@ -124,6 +123,7 @@ export class DatabaseManager {
   private async createTables(): Promise<void> {
     const db: relationalStore.RdbStore = this.ensureStore()
 
+    // Users 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS users (
         account TEXT PRIMARY KEY,
@@ -144,6 +144,7 @@ export class DatabaseManager {
       )
     `)
 
+    // Products 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
@@ -168,6 +169,7 @@ export class DatabaseManager {
       )
     `)
 
+    // Cart Items 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS cart_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,6 +184,7 @@ export class DatabaseManager {
       )
     `)
 
+    // Comments 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS comments (
         id TEXT PRIMARY KEY,
@@ -200,6 +203,7 @@ export class DatabaseManager {
       )
     `)
 
+    // Addresses 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS addresses (
         id TEXT PRIMARY KEY,
@@ -215,6 +219,7 @@ export class DatabaseManager {
       )
     `)
 
+    // Orders 表
     await db.executeSql(`
       CREATE TABLE IF NOT EXISTS orders (
         id TEXT PRIMARY KEY,
@@ -236,7 +241,7 @@ export class DatabaseManager {
   }
 
   /**
-   * 自动创建管理员账号（首次启动）
+   * 自动创建管理员账号
    */
   private async seedAdminIfNeeded(): Promise<void> {
     const admin: User | null = await this.getUserByAccount('admin')
@@ -408,7 +413,7 @@ export class DatabaseManager {
   }
 
   // -----------------------------
-  // 3) 商品
+  // 3) 商品 (核心修改部分)
   // -----------------------------
   public async upsertProduct(product: ProductModel, createdBy?: string): Promise<boolean> {
     const db: relationalStore.RdbStore = this.ensureStore()
@@ -488,8 +493,8 @@ export class DatabaseManager {
     const db: relationalStore.RdbStore = this.ensureStore()
 
     const sql: string = status
-      ? 'SELECT id,name,price,originalPrice,description,detailDescription,category,tags,rating,reviewCount,stock,sales,isNew,status,spec FROM products WHERE status = ? ORDER BY updatedAt DESC'
-      : 'SELECT id,name,price,originalPrice,description,detailDescription,category,tags,rating,reviewCount,stock,sales,isNew,status,spec FROM products ORDER BY updatedAt DESC'
+      ? 'SELECT * FROM products WHERE status = ? ORDER BY updatedAt DESC'
+      : 'SELECT * FROM products ORDER BY updatedAt DESC'
 
     let rs: relationalStore.ResultSet | null = null
     try {
@@ -497,25 +502,25 @@ export class DatabaseManager {
       const out: ProductRow[] = []
 
       while (rs.goToNextRow()) {
-        const tagsStr: string = rs.getString(7)
+        const tagsStr: string = rs.getString(rs.getColumnIndex('tags'))
         const tags: string[] = tagsStr ? (JSON.parse(tagsStr) as string[]) : []
 
         out.push({
-          id: rs.getString(0),
-          name: rs.getString(1),
-          price: rs.getDouble(2),
-          originalPrice: rs.getDouble(3),
-          description: rs.getString(4),
-          detailDescription: rs.getString(5),
-          category: rs.getString(6),
+          id: rs.getString(rs.getColumnIndex('id')),
+          name: rs.getString(rs.getColumnIndex('name')),
+          price: rs.getDouble(rs.getColumnIndex('price')),
+          originalPrice: rs.getDouble(rs.getColumnIndex('originalPrice')),
+          description: rs.getString(rs.getColumnIndex('description')),
+          detailDescription: rs.getString(rs.getColumnIndex('detailDescription')),
+          category: rs.getString(rs.getColumnIndex('category')),
           tags,
-          rating: rs.getDouble(8),
-          reviewCount: rs.getLong(9),
-          stock: rs.getLong(10),
-          sales: rs.getLong(11),
-          isNew: rs.getLong(12) === 1,
-          status: rs.getString(13),
-          spec: rs.getString(14)
+          rating: rs.getDouble(rs.getColumnIndex('rating')),
+          reviewCount: rs.getLong(rs.getColumnIndex('reviewCount')),
+          stock: rs.getLong(rs.getColumnIndex('stock')),
+          sales: rs.getLong(rs.getColumnIndex('sales')),
+          isNew: rs.getLong(rs.getColumnIndex('isNew')) === 1,
+          status: rs.getString(rs.getColumnIndex('status')),
+          spec: rs.getString(rs.getColumnIndex('spec'))
         })
       }
       return out
@@ -524,6 +529,67 @@ export class DatabaseManager {
       return []
     } finally {
       rs?.close()
+    }
+  }
+
+  /**
+   * [新增] 根据ID获取单个商品（CartService 必须用到）
+   */
+  public async getProductById(id: string): Promise<ProductRow | null> {
+    const db: relationalStore.RdbStore = this.ensureStore()
+    let rs: relationalStore.ResultSet | null = null
+    try {
+      rs = await db.querySql('SELECT * FROM products WHERE id = ?', [id])
+      if (rs.rowCount <= 0) return null
+      rs.goToFirstRow()
+
+      const tagsStr = rs.getString(rs.getColumnIndex('tags'))
+      const tags = tagsStr ? (JSON.parse(tagsStr) as string[]) : []
+
+      return {
+        id: rs.getString(rs.getColumnIndex('id')),
+        name: rs.getString(rs.getColumnIndex('name')),
+        price: rs.getDouble(rs.getColumnIndex('price')),
+        originalPrice: rs.getDouble(rs.getColumnIndex('originalPrice')),
+        description: rs.getString(rs.getColumnIndex('description')),
+        detailDescription: rs.getString(rs.getColumnIndex('detailDescription')),
+        category: rs.getString(rs.getColumnIndex('category')),
+        tags: tags,
+        rating: rs.getDouble(rs.getColumnIndex('rating')),
+        reviewCount: rs.getLong(rs.getColumnIndex('reviewCount')),
+        stock: rs.getLong(rs.getColumnIndex('stock')),
+        sales: rs.getLong(rs.getColumnIndex('sales')),
+        isNew: rs.getLong(rs.getColumnIndex('isNew')) === 1,
+        status: rs.getString(rs.getColumnIndex('status')),
+        spec: rs.getString(rs.getColumnIndex('spec'))
+      }
+    } catch (e) {
+      console.error('[DB] getProductById failed:', e)
+      return null
+    } finally {
+      rs?.close()
+    }
+  }
+
+  /**
+   * [新增] 数据播种：如果数据库为空，注入 MockData
+   */
+  public async seedProducts(): Promise<void> {
+    try {
+      const rows = await this.getAllProducts()
+      if (rows.length > 0) {
+        console.info('[DB] Products already exist, skip seeding.')
+        return
+      }
+
+      console.info('[DB] Seeding MockData into DB...')
+      const mocks = MockData.generateProducts() // 使用静态导入
+      for (const p of mocks) {
+        await this.insertProduct(p)
+      }
+      console.info('[DB] Seeding completed, count:', mocks.length)
+    } catch (e) {
+      console.error('[DB] seedProducts failed:', e)
     }
   }
 
@@ -693,12 +759,11 @@ export class DatabaseManager {
 
       const out: Comment[] = []
       while (rs.goToNextRow()) {
-        // ✅ 注意：Comment 构造函数是 (productId, userId, username, rating, content)
         const c: Comment = new Comment(
           rs.getString(1),
           rs.getString(2),
           rs.getString(3),
-          Number(rs.getLong(5)), // ✅ 不用 getInt
+          Number(rs.getLong(5)),
           rs.getString(6)
         )
         c.id = rs.getString(0)
@@ -733,7 +798,7 @@ export class DatabaseManager {
   }
 
   // -----------------------------
-  // 6) 地址/订单（预留）
+  // 6) 地址/订单
   // -----------------------------
   public async upsertAddress(addr: Address, userId: string): Promise<boolean> {
     const db: relationalStore.RdbStore = this.ensureStore()

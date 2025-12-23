@@ -1,42 +1,65 @@
-// entry/src/main/ets/services/AuthService.ets
-import { DatabaseManager } from '../database/DatabaseManager'
+import UIAbility from '@ohos.app.ability.UIAbility';
+import hilog from '@ohos.hilog';
+import window from '@ohos.window';
+import common from '@ohos.app.ability.common';
+import { DatabaseManager } from '../database/DatabaseManager';
+import { AuthService } from '../services/AuthService';
+import { CartService } from '../services/CartService';
 
-export class AuthService {
-  private static instance: AuthService
-  private static readonly KEY_CURRENT_ACCOUNT: string = 'currentAccount'
+export default class EntryAbility extends UIAbility {
+  onCreate(want: Object, launchParam: Object): void {
+    hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onCreate');
+  }
 
-  private db: DatabaseManager = DatabaseManager.getInstance()
+  onDestroy(): void {
+    hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onDestroy');
+  }
 
-  private constructor() {}
+  // ✅ 修复：去掉 async，保持标准签名
+  onWindowStageCreate(windowStage: window.WindowStage): void {
+    hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-  public static getInstance(): AuthService {
-    if (!AuthService.instance) {
-      AuthService.instance = new AuthService()
+    // 调用内部异步初始化
+    this.initServices();
+
+    windowStage.loadContent('pages/SplashScreen', (err) => {
+      if (err.code) {
+        hilog.error(0x0000, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err) ?? '');
+        return;
+      }
+      hilog.info(0x0000, 'testTag', 'Succeeded in loading the content.');
+    });
+  }
+
+  // ✅ 封装异步初始化逻辑
+  private async initServices(): Promise<void> {
+    try {
+      const context = this.context as common.UIAbilityContext;
+
+      // 1. 初始化数据库
+      await DatabaseManager.getInstance().init(context);
+      // 2. 播种数据
+      await DatabaseManager.getInstance().seedProducts();
+      // 3. 初始化用户服务 (现在 AuthService 有 init 方法了)
+      await AuthService.getInstance().init();
+      // 4. 初始化购物车
+      await CartService.getInstance().init();
+
+      console.info('All services initialized successfully');
+    } catch (error) {
+      console.error('Service initialization failed:', JSON.stringify(error));
     }
-    return AuthService.instance
   }
 
-  public setCurrentAccount(account: string): void {
-    AppStorage.setOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, account)
-    this.db.setCurrentUserAccount(account)
+  onWindowStageDestroy(): void {
+    hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
   }
 
-  public clearCurrentAccount(): void {
-    AppStorage.setOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, '')
-    this.db.setCurrentUserAccount(null)
+  onForeground(): void {
+    hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onForeground');
   }
 
-  public getCurrentAccount(): string {
-    return AppStorage.get<string>(AuthService.KEY_CURRENT_ACCOUNT) || ''
-  }
-
-  public isLoggedIn(): boolean {
-    return !!this.getCurrentAccount()
-  }
-
-  public async isAdmin(): Promise<boolean> {
-    const account = this.getCurrentAccount()
-    if (!account) return false
-    return this.db.isAdmin(account)
+  onBackground(): void {
+    hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onBackground');
   }
 }
