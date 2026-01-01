@@ -1,6 +1,6 @@
 {
   "app": {
-    "bundleName": "com.example.myapplication",
+    "bundleName": "cn.bupt.se.syaq.mall",
     "vendor": "example",
     "versionCode": 1000000,
     "versionName": "1.0.0",

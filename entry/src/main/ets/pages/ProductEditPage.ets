@@ -52,8 +52,7 @@ struct ProductEditPage {
     try {
       const ctx = getContext(this) as common.UIAbilityContext
       await this.dbManager.init(ctx)
-
-      const account = this.auth.getCurrentAccount()
+      const account: string = this.auth.getCurrentAccount()
       if (account) {
         this.dbManager.setCurrentUserAccount(account)
       }

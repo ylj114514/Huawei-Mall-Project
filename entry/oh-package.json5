@@ -1,10 +1,13 @@
 {
   "name": "entry",
   "version": "1.0.0",
-  "description": "Please describe the basic information.",
+  "description": "Huawei Mall Project",
   "main": "",
   "author": "",
   "license": "",
-  "dependencies": {}
+  "dependencies": {
+    "@hw-agconnect/hmcore": "^1.0.0",
+    "@hw-agconnect/auth": "^1.0.0",
+    "@hw-agconnect/cloud": "^1.0.0"
+  }
 }
-

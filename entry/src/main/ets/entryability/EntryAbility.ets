@@ -5,10 +5,29 @@ import common from '@ohos.app.ability.common';
 import { DatabaseManager } from '../database/DatabaseManager';
 import { AuthService } from '../services/AuthService';
 import { CartService } from '../services/CartService';
+// ✅ 引入华为 AGC 初始化模块
+// ✅ 引入华为 AGC 初始化模块
+// ✅ 正确写法
+import { initialize } from '@hw-agconnect/hmcore';
+
+import buffer from '@ohos.buffer';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Object, launchParam: Object): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onCreate');
+
+    // ✅ 核心逻辑：初始化华为 AGC 服务
+    try {
+      this.context.resourceManager.getRawFileContent('agconnect-services.json').then((value) => {
+        let jsonString = buffer.from(value).toString('utf8');
+        initialize(this.context, JSON.parse(jsonString));
+        hilog.info(0x0000, 'AGC', '华为 AGC SDK 初始化成功！');
+      }).catch((error: Error) => {
+        hilog.error(0x0000, 'AGC', '配置文件读取失败，请检查 rawfile 目录: ' + JSON.stringify(error));
+      });
+    } catch (err) {
+      hilog.error(0x0000, 'AGC', 'AGC 初始化异常: ' + JSON.stringify(err));
+    }
   }
 
   onDestroy(): void {
@@ -18,12 +37,12 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    // 调用内部异步初始化，并捕获可能的错误
+    // 初始化其他本地服务 (数据库、购物车)
     this.initServices().catch((err: Error) => {
       hilog.error(0x0000, 'testTag', 'Init services failed: %{public}s', JSON.stringify(err) ?? '');
     });
 
-    // 这里加载 SplashScreen 是正确的，SplashScreen 会负责跳转到 Index
+    // 加载启动页
     windowStage.loadContent('pages/SplashScreen', (err) => {
       if (err.code) {
         hilog.error(0x0000, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err) ?? '');
@@ -33,20 +52,14 @@ export default class EntryAbility extends UIAbility {
     });
   }
 
-  // 封装异步初始化逻辑
   private async initServices(): Promise<void> {
     try {
       const context = this.context as common.UIAbilityContext;
-
-      // 1. 初始化数据库
       await DatabaseManager.getInstance().init(context);
-      // 2. 播种数据
       await DatabaseManager.getInstance().seedProducts();
-      // 3. 初始化用户服务
-      await AuthService.getInstance().init();
-      // 4. 初始化购物车
+      // AuthService 的初始化现在主要依赖 AGC，这里保留调用以防万一
+      // await AuthService.getInstance().init();
       await CartService.getInstance().init();
-
       hilog.info(0x0000, 'testTag', 'All services initialized successfully');
     } catch (error) {
       hilog.error(0x0000, 'testTag', 'Service initialization failed: %{public}s', JSON.stringify(error));

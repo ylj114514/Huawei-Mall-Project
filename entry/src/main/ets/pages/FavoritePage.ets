@@ -2,7 +2,6 @@ import router from '@ohos.router'
 import { FavoriteItem } from '../model/DataModel'
 import { FavoriteService } from '../services/FavoriteService'
 import { ProductModel } from '../model/ProductModel'
-// import { SearchBar } from '../components/SearchBar' // ❌ 移除报错组件，改用下方原生组件
 
 @Entry
 @Component
@@ -18,14 +17,16 @@ struct FavoritePage {
     this.loadFavorites()
   }
 
-  // ✅ 新增：页面显示时刷新，防止详情页取消收藏后这里不更新
+  // 页面显示时刷新
   onPageShow() {
     this.loadFavorites()
   }
 
   private loadFavorites(): void {
     try {
-      this.favorites = this.favoriteService.getFavorites()
+      // ✅ 修复1：将 'as any' 替换为 'as ESObject'
+      // ESObject 是 ArkTS 中用于兼容动态类型的官方类型
+      this.favorites = this.favoriteService.getFavorites() as ESObject
 
       const categorySet = new Set<string>()
       this.favorites.forEach(item => {
@@ -51,7 +52,8 @@ struct FavoritePage {
   }
 
   private filterFavorites(): void {
-    let filtered = this.favoriteService.getFavorites()
+    // ✅ 修复2：将 'any[]' 替换为 'ESObject[]'
+    let filtered: ESObject[] = this.favoriteService.getFavorites()
 
     if (this.selectedCategory !== '全部') {
       filtered = this.favoriteService.getFavoritesByCategory(this.selectedCategory)
@@ -61,7 +63,8 @@ struct FavoritePage {
       filtered = this.favoriteService.searchFavorites(this.searchText.trim())
     }
 
-    this.favorites = filtered
+    // ✅ 修复3：将 'as any' 替换为 'as ESObject'
+    this.favorites = filtered as ESObject
   }
 
   private toggleFavorite(favorite: FavoriteItem): void {
@@ -70,10 +73,14 @@ struct FavoritePage {
   }
 
   private goToProductDetail(product: ProductModel): void {
-    router.pushUrl({
-      url: 'pages/ProductDetailPage',
-      params: { product: product } // ✅ 建议传对象
-    })
+    try {
+      router.pushUrl({
+        url: 'pages/ProductDetailPage',
+        params: { product: product }
+      })
+    } catch (err) {
+      console.error('路由跳转失败:', err)
+    }
   }
 
   build() {
@@ -86,7 +93,11 @@ struct FavoritePage {
           .backgroundColor(Color.Transparent)
           .fontColor($r('app.color.text_primary'))
           .onClick(() => {
-            router.back()
+            try {
+              router.back()
+            } catch (err) {
+              console.error('返回失败:', err)
+            }
           })
 
         Text('我的收藏')
@@ -95,7 +106,7 @@ struct FavoritePage {
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
 
-        Text(`(${this.favorites.length})`) // ✅ 动态显示数量
+        Text(`(${this.favorites.length})`)
           .fontSize(14)
           .fontColor($r('app.color.text_secondary'))
       }
@@ -106,18 +117,18 @@ struct FavoritePage {
       .alignItems(VerticalAlign.Center)
       .backgroundColor($r('app.color.white'))
 
-      // 搜索栏 - ✅ 使用系统 Search 组件替代，样式完全复刻
+      // 搜索栏
       Column() {
         Search({ value: this.searchText, placeholder: '搜索收藏...' })
           .searchButton('搜索')
           .width('100%')
           .height(40)
-          .backgroundColor('#F5F5F5') // 浅灰背景
+          .backgroundColor('#F5F5F5')
           .placeholderColor($r('app.color.text_secondary'))
           .onSubmit((value) => this.onSearch(value))
           .onChange((value) => {
             this.searchText = value
-            this.filterFavorites() // 支持实时搜索
+            this.filterFavorites()
           })
       }
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
@@ -182,7 +193,9 @@ struct FavoritePage {
             .fontColor(Color.White)
             .borderRadius(22)
             .onClick(() => {
-              router.replaceUrl({ url: 'pages/Index' })
+              try {
+                router.replaceUrl({ url: 'pages/Index' })
+              } catch (e) {}
             })
         }
         .width('100%')

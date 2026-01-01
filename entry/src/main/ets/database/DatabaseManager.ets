@@ -5,6 +5,7 @@ import { User, Comment, Address, Order } from '../model/DataModel'
 import { ProductModel } from '../model/ProductModel'
 import { BusinessError } from '../model/BusinessError'
 
+// 使用 cloud.CloudDBZone 等
 type UserRole = 'admin' | 'user'
 
 export interface ProductRow {
@@ -271,7 +272,7 @@ export class DatabaseManager {
       user.username,
       user.email || '',
       user.phone || '',
-      user.avatar || '',
+      user.avatar ? user.avatar.toString() : '',
       user.realName || '',
       user.gender || 'unknown',
       user.birthday || '',

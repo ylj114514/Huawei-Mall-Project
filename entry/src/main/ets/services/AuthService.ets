@@ -1,107 +1,154 @@
-import router from '@ohos.router'
-import { DatabaseManager } from '../database/DatabaseManager'
-import { User } from '../model/DataModel'
+import { router } from '@kit.ArkUI';
+import { User } from '../model/DataModel';
+import { BusinessError } from '@kit.BasicServicesKit';
+// ✅ 核心修复：直接引入 cloud 统一包，不再使用 @hw-agconnect/auth
+import cloud, { AuthUser, VerifyCodeAction } from '@hw-agconnect/cloud';
 
 /**
- * 认证服务类 (单例模式)
- * 职责：
- * 1. 管理当前登录用户的会话状态 (Session) - 使用 AppStorage 持久化
- * 2. 作为 DatabaseManager 的上层封装，提供简便的用户数据获取接口
+ * 认证服务单例类 (Cloud SDK 版本)
  */
 export class AuthService {
-  private static instance: AuthService
-  // 定义 AppStorage 中存储 Key 的常量
-  private static readonly KEY_CURRENT_ACCOUNT: string = 'currentAccount'
-
-  // 引用数据库管理器实例
-  private db: DatabaseManager = DatabaseManager.getInstance()
+  private static instance: AuthService;
+  private currentUser: User | null = null;
 
   private constructor() {}
 
-  /**
-   * 获取单例实例
-   */
   public static getInstance(): AuthService {
     if (!AuthService.instance) {
-      AuthService.instance = new AuthService()
+      AuthService.instance = new AuthService();
     }
-    return AuthService.instance
+    return AuthService.instance;
   }
 
-  /**
-   * ✅ 核心修复：初始化方法
-   * 作用：EntryAbility 启动时调用，用于恢复上次的应用会话状态
-   */
   public async init(): Promise<void> {
-    // 尝试从全局内存存储中恢复上次登录的账号
-    const account = AppStorage.Get<string>(AuthService.KEY_CURRENT_ACCOUNT)
-    if (account) {
-      // 如果有缓存账号，同步设置到数据库管理器的当前用户状态中
-      this.db.setCurrentUserAccount(account)
-      console.info('[AuthService] Init: Session restored for account:', account)
-    } else {
-      console.info('[AuthService] Init: No active session found')
+    await this.getCurrentUser();
+  }
+
+  /**
+   * 1. 发送验证码 (新版 API)
+   */
+  public async requestVerifyCode(countryCode: string, phoneNumber: string): Promise<void> {
+    try {
+      // ✅ 修复：使用 cloud.auth().requestVerifyCode 传入对象参数
+      await cloud.auth().requestVerifyCode({
+        action: VerifyCodeAction.REGISTER_LOGIN, // 使用正确的枚举 REGISTER_LOGIN
+        lang: 'zh_CN',
+        sendInterval: 60,
+        verifyCodeType: {
+          kind: 'phone',
+          phoneNumber: phoneNumber,
+          countryCode: countryCode
+        }
+      });
+      console.info('[AuthService] 验证码发送成功');
+    } catch (e) {
+      // ✅ 修复 ArkTS 抛出错误限制
+      const error = e as BusinessError;
+      console.error(`[AuthService] 验证码发送失败: ${JSON.stringify(error)}`);
+      throw new Error(error.message || '验证码发送失败');
     }
   }
 
   /**
-   * 设置当前登录账号 (登录/注册成功后调用)
+   * 2. 手机号登录 (新版 API)
    */
-  public setCurrentAccount(account: string): void {
-    // 1. 保存到全局 AppStorage，确保页面刷新或跳转后状态不丢失
-    AppStorage.SetOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, account)
-    // 2. 同步设置数据库上下文
-    this.db.setCurrentUserAccount(account)
+  public async loginWithPhone(countryCode: string, phoneNumber: string, verifyCode: string): Promise<boolean> {
+    try {
+      // ✅ 修复：使用 cloud.auth().signIn 传入 credentialInfo 对象
+      const result = await cloud.auth().signIn({
+        credentialInfo: {
+          kind: 'phone',
+          phoneNumber: phoneNumber,
+          countryCode: countryCode,
+          verifyCode: verifyCode
+        }
+      });
+
+      const agcUser = result.getUser();
+      if (agcUser) {
+        this.updateCurrentUser(agcUser, phoneNumber);
+        console.info('[AuthService] 登录成功');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      const error = e as BusinessError;
+      console.error(`[AuthService] 登录失败: ${JSON.stringify(error)}`);
+      throw new Error(error.message || '登录失败');
+    }
   }
 
   /**
-   * 清除当前账号 (退出登录时调用)
-   */
-  public clearCurrentAccount(): void {
-    AppStorage.SetOrCreate<string>(AuthService.KEY_CURRENT_ACCOUNT, '')
-    this.db.setCurrentUserAccount(null)
-  }
-
-  /**
-   * 获取当前登录的账号字符串
-   */
-  public getCurrentAccount(): string {
-    return AppStorage.Get<string>(AuthService.KEY_CURRENT_ACCOUNT) || ''
-  }
-
-  /**
-   * ✅ 核心修复：获取完整的当前用户对象
-   * 作用：UserCenterPage 等页面调用，用于显示头像、昵称等详细信息
+   * 3. 获取当前用户
    */
   public async getCurrentUser(): Promise<User | null> {
-    const account = this.getCurrentAccount()
-    if (!account) return null
-    // 委托给 DatabaseManager 从数据库查询完整信息
-    return await this.db.getUserByAccount(account)
+    if (this.currentUser) return this.currentUser;
+
+    try {
+      // ✅ 修复：cloud.auth().getCurrentUser()
+      const agcUser = await cloud.auth().getCurrentUser();
+      if (agcUser) {
+        this.updateCurrentUser(agcUser);
+        return this.currentUser;
+      }
+    } catch (e) {
+      console.info('[AuthService] 当前未登录');
+    }
+    return null;
   }
 
   /**
-   * ✅ 核心修复：退出登录
+   * 4. 退出登录
    */
-  public logout(): void {
-    this.clearCurrentAccount()
-    // 强制跳转回登录页
-    router.replaceUrl({ url: 'pages/LoginPage' })
+  public async logout(): Promise<void> {
+    try {
+      await cloud.auth().signOut();
+      this.currentUser = null;
+      router.replaceUrl({ url: 'pages/LoginPage' });
+    } catch (e) {
+      console.error('[AuthService] 退出失败');
+    }
   }
 
   /**
-   * 检查是否已登录 (用于路由守卫或UI判断)
+   * 更新用户信息
    */
-  public isLoggedIn(): boolean {
-    return !!this.getCurrentAccount()
+  private updateCurrentUser(agcUser: AuthUser, inputPhone?: string): void {
+    const rawPhone = agcUser.getPhone() || inputPhone || '';
+    const uid = agcUser.getUid();
+
+    let displayName = '新用户';
+    if (rawPhone.length >= 4) {
+      displayName = `用户${rawPhone.slice(-4)}`;
+    }
+
+    // 这里需要配合你之前修改好的 DataModel (支持多参数构造)
+    this.currentUser = new User(
+      uid,                    // id
+      rawPhone,               // phone
+      displayName,            // username
+      $r('app.media.app_icon'), // avatar
+      'platinum',             // level
+      ''                      // token
+    );
   }
 
   /**
-   * 检查当前用户是否为管理员 (用于显示后台入口)
+   * 获取当前账号
+   */
+  public getCurrentAccount(): string {
+    return this.currentUser?.phone || '';
+  }
+
+  /**
+   * 检查当前用户是否为管理员
    */
   public async isAdmin(): Promise<boolean> {
-    const account = this.getCurrentAccount()
-    if (!account) return false
-    return this.db.isAdmin(account)
+    const account = this.getCurrentAccount();
+    if (!account) return false;
+    
+    // 这里需要根据实际业务逻辑判断是否为管理员
+    // 暂时返回false，需要根据实际需求实现
+    return account === 'admin';
   }
 }

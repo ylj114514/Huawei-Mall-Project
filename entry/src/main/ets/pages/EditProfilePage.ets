@@ -1,7 +1,7 @@
 import router from '@ohos.router'
-import promptAction from '@ohos.promptAction' // 建议导入用于弹窗提示
+import promptAction from '@ohos.promptAction'
 import { User } from '../model/DataModel'
-// ✅ 修复1：补充导入 UserProfilePatch
+// ✅ 核心修复：引入 DatabaseManager 中定义的类型
 import { DatabaseManager, UserProfilePatch } from '../database/DatabaseManager'
 import { AuthService } from '../services/AuthService'
 import { ImageUploadComponent, ImageUploadItem } from '../components/ImageUploadComponent'
@@ -62,10 +62,8 @@ struct EditProfilePage {
         this.phone = this.user.phone || ''
         this.realName = this.user.realName || ''
         this.birthday = this.user.birthday || ''
-        // 类型断言，确保类型匹配
         this.gender = (this.user.gender as 'male' | 'female' | 'unknown') || 'unknown'
 
-        // 设置头像
         if (this.user.avatar) {
           this.avatarImages = [new ImageUploadItem('current-avatar', this.user.avatar)]
         }
@@ -101,9 +99,9 @@ struct EditProfilePage {
     return true
   }
 
-  // ✅ 修复2：重写 saveProfile 方法，解决类型和空值报错
+  // ✅ 逻辑修复：使用正确的类型
   private async saveProfile() {
-    const currentUser = this.user // 使用局部变量
+    const currentUser = this.user
     if (!this.validateForm() || !currentUser) return
 
     this.isLoading = true
@@ -118,7 +116,7 @@ struct EditProfilePage {
         }
       }
 
-      // 2. 构建更新对象 (明确类型 UserProfilePatch)
+      // 2. 构建更新对象 (使用导入的接口，防止红字)
       const patch: UserProfilePatch = {
         username: this.nickname.trim(),
         email: this.email,
@@ -126,19 +124,14 @@ struct EditProfilePage {
         realName: this.realName,
         birthday: this.birthday,
         gender: this.gender,
-        avatar: newAvatar
+        avatar: newAvatar ? newAvatar.toString() : ''
       }
 
       // 3. 调用数据库更新
       const success = await this.db.updateUserProfile(currentUser.account, patch)
 
       if (success) {
-        // 使用 promptAction 提示（如果导入了的话），或者是 this.errorMessage
-        // 这里为了兼容性使用 errorMessage 显示成功也可以，或者保持原有逻辑
-        try {
-          promptAction.showToast({ message: '保存成功' })
-        } catch(e) {}
-
+        promptAction.showToast({ message: '保存成功' })
         setTimeout(() => {
           router.back()
         }, 500)
@@ -157,276 +150,106 @@ struct EditProfilePage {
     this.avatarImages = images
   }
 
-  // --- 以下 UI 代码保持完全不变 ---
-
+  // --- UI 代码保持完全不变 ---
   @Builder
   Header() {
     Row() {
       Button() {
-        Text('取消')
-          .fontSize(16)
-          .fontColor(COLORS.text)
+        Text('取消').fontSize(16).fontColor(COLORS.text)
       }
-      .width(60)
-      .height(48)
-      .backgroundColor(Color.Transparent)
-      .onClick(() => router.back())
+      .width(60).height(48).backgroundColor(Color.Transparent).onClick(() => router.back())
 
-      Text('编辑资料')
-        .fontSize(18)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(COLORS.text)
-        .layoutWeight(1)
-        .textAlign(TextAlign.Center)
+      Text('编辑资料').fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLORS.text).layoutWeight(1).textAlign(TextAlign.Center)
 
       Button('保存')
-        .fontSize(16)
-        .fontColor(COLORS.primary)
-        .backgroundColor(Color.Transparent)
+        .fontSize(16).fontColor(COLORS.primary).backgroundColor(Color.Transparent)
         .enabled(!this.isLoading && this.validateForm())
         .onClick(() => this.saveProfile())
     }
-    .width('100%')
-    .height(56)
-    .padding({ left: 20, right: 20 })
-    .backgroundColor(COLORS.surface)
+    .width('100%').height(56).padding({ left: 20, right: 20 }).backgroundColor(COLORS.surface)
   }
 
   @Builder
   AvatarSection() {
     Column() {
-      Text('头像')
-        .fontSize(16)
-        .fontColor(COLORS.text)
-        .width('100%')
-        .margin({ bottom: 16 })
-
+      Text('头像').fontSize(16).fontColor(COLORS.text).width('100%').margin({ bottom: 16 })
       Row() {
         ImageUploadComponent({
           images: this.avatarImages,
           maxCount: 1,
-          onImagesChange: (images: ImageUploadItem[]) => {
-            this.onImagesChange(images)
-          }
+          onImagesChange: (images: ImageUploadItem[]) => { this.onImagesChange(images) }
         })
-          .width(120)
-          .height(120)
+          .width(120).height(120)
 
         Column() {
-          Text('点击上传头像')
-            .fontSize(12)
-            .fontColor(COLORS.textSecondary)
-            .margin({ top: 8 })
-          Text('支持JPG、PNG格式')
-            .fontSize(12)
-            .fontColor(COLORS.textSecondary)
+          Text('点击上传头像').fontSize(12).fontColor(COLORS.textSecondary).margin({ top: 8 })
+          Text('支持JPG、PNG格式').fontSize(12).fontColor(COLORS.textSecondary)
         }
-        .width('100%')
-        .height(120)
-        .justifyContent(FlexAlign.Center)
-        .layoutWeight(1)
-        .margin({ left: 20 })
+        .width('100%').height(120).justifyContent(FlexAlign.Center).layoutWeight(1).margin({ left: 20 })
       }
       .width('100%')
     }
-    .width('100%')
-    .padding(20)
-    .backgroundColor(COLORS.surface)
-    .margin({ top: 12 })
+    .width('100%').padding(20).backgroundColor(COLORS.surface).margin({ top: 12 })
   }
 
   @Builder
   BasicInfoSection() {
     Column() {
-      Text('基本信息')
-        .fontSize(16)
-        .fontColor(COLORS.text)
-        .width('100%')
-        .margin({ bottom: 16 })
+      Text('基本信息').fontSize(16).fontColor(COLORS.text).width('100%').margin({ bottom: 16 })
 
       Column() {
-        Text('昵称')
-          .fontSize(14)
-          .fontColor(COLORS.text)
-          .width('100%')
-          .margin({ bottom: 8 })
-
+        Text('昵称').fontSize(14).fontColor(COLORS.text).width('100%').margin({ bottom: 8 })
         TextInput({ placeholder: '请输入昵称', text: this.nickname })
-          .width('100%')
-          .height(48)
-          .fontSize(16)
-          .fontColor(COLORS.text)
-          .backgroundColor(COLORS.background)
-          .borderRadius(8)
-          .padding({ left: 16, right: 16 })
-          .onChange((value: string) => {
-            this.nickname = value
-            this.errorMessage = ''
-          })
-      }
-      .width('100%')
-      .margin({ bottom: 20 })
+          .width('100%').height(48).fontSize(16).fontColor(COLORS.text).backgroundColor(COLORS.background).borderRadius(8).padding({ left: 16, right: 16 })
+          .onChange((value: string) => { this.nickname = value; this.errorMessage = '' })
+      }.width('100%').margin({ bottom: 20 })
 
       Column() {
-        Text('邮箱')
-          .fontSize(14)
-          .fontColor(COLORS.text)
-          .width('100%')
-          .margin({ bottom: 8 })
-
+        Text('邮箱').fontSize(14).fontColor(COLORS.text).width('100%').margin({ bottom: 8 })
         TextInput({ placeholder: '请输入邮箱', text: this.email })
-          .width('100%')
-          .height(48)
-          .fontSize(16)
-          .fontColor(COLORS.text)
-          .backgroundColor(COLORS.background)
-          .borderRadius(8)
-          .padding({ left: 16, right: 16 })
-          .type(InputType.Email)
-          .onChange((value: string) => {
-            this.email = value
-            this.errorMessage = ''
-          })
-      }
-      .width('100%')
-      .margin({ bottom: 20 })
+          .width('100%').height(48).fontSize(16).fontColor(COLORS.text).backgroundColor(COLORS.background).borderRadius(8).padding({ left: 16, right: 16 }).type(InputType.Email)
+          .onChange((value: string) => { this.email = value; this.errorMessage = '' })
+      }.width('100%').margin({ bottom: 20 })
 
       Column() {
-        Text('手机号')
-          .fontSize(14)
-          .fontColor(COLORS.text)
-          .width('100%')
-          .margin({ bottom: 8 })
-
+        Text('手机号').fontSize(14).fontColor(COLORS.text).width('100%').margin({ bottom: 8 })
         TextInput({ placeholder: '请输入手机号', text: this.phone })
-          .width('100%')
-          .height(48)
-          .fontSize(16)
-          .fontColor(COLORS.text)
-          .backgroundColor(COLORS.background)
-          .borderRadius(8)
-          .padding({ left: 16, right: 16 })
-          .type(InputType.Number)
-          .maxLength(11)
-          .onChange((value: string) => {
-            this.phone = value
-            this.errorMessage = ''
-          })
-      }
-      .width('100%')
+          .width('100%').height(48).fontSize(16).fontColor(COLORS.text).backgroundColor(COLORS.background).borderRadius(8).padding({ left: 16, right: 16 }).type(InputType.Number).maxLength(11)
+          .onChange((value: string) => { this.phone = value; this.errorMessage = '' })
+      }.width('100%')
     }
-    .width('100%')
-    .padding(20)
-    .backgroundColor(COLORS.surface)
-    .margin({ top: 12 })
+    .width('100%').padding(20).backgroundColor(COLORS.surface).margin({ top: 12 })
   }
 
   @Builder
   PersonalInfoSection() {
     Column() {
-      Text('个人信息')
-        .fontSize(16)
-        .fontColor(COLORS.text)
-        .width('100%')
-        .margin({ bottom: 16 })
+      Text('个人信息').fontSize(16).fontColor(COLORS.text).width('100%').margin({ bottom: 16 })
 
       Column() {
-        Text('真实姓名')
-          .fontSize(14)
-          .fontColor(COLORS.text)
-          .width('100%')
-          .margin({ bottom: 8 })
-
+        Text('真实姓名').fontSize(14).fontColor(COLORS.text).width('100%').margin({ bottom: 8 })
         TextInput({ placeholder: '请输入真实姓名', text: this.realName })
-          .width('100%')
-          .height(48)
-          .fontSize(16)
-          .fontColor(COLORS.text)
-          .backgroundColor(COLORS.background)
-          .borderRadius(8)
-          .padding({ left: 16, right: 16 })
-          .onChange((value: string) => {
-            this.realName = value
-          })
-      }
-      .width('100%')
-      .margin({ bottom: 20 })
+          .width('100%').height(48).fontSize(16).fontColor(COLORS.text).backgroundColor(COLORS.background).borderRadius(8).padding({ left: 16, right: 16 })
+          .onChange((value: string) => { this.realName = value })
+      }.width('100%').margin({ bottom: 20 })
 
       Column() {
-        Text('性别')
-          .fontSize(14)
-          .fontColor(COLORS.text)
-          .width('100%')
-          .margin({ bottom: 8 })
-
+        Text('性别').fontSize(14).fontColor(COLORS.text).width('100%').margin({ bottom: 8 })
         Row() {
-          Row() {
-            Radio({ value: 'male', group: 'gender' })
-              .checked(this.gender === 'male')
-              .onChange(() => {
-                this.gender = 'male'
-              })
-            Text('男')
-              .fontSize(16)
-              .fontColor(COLORS.text)
-          }
-          .width('33%')
-
-          Row() {
-            Radio({ value: 'female', group: 'gender' })
-              .checked(this.gender === 'female')
-              .onChange(() => {
-                this.gender = 'female'
-              })
-            Text('女')
-              .fontSize(16)
-              .fontColor(COLORS.text)
-          }
-          .width('33%')
-
-          Row() {
-            Radio({ value: 'unknown', group: 'gender' })
-              .checked(this.gender === 'unknown')
-              .onChange(() => {
-                this.gender = 'unknown'
-              })
-            Text('保密')
-              .fontSize(16)
-              .fontColor(COLORS.text)
-          }
-          .width('33%')
-        }
-        .width('100%')
-      }
-      .width('100%')
-      .margin({ bottom: 20 })
+          Row() { Radio({ value: 'male', group: 'gender' }).checked(this.gender === 'male').onChange(() => { this.gender = 'male' }); Text('男').fontSize(16).fontColor(COLORS.text) }.width('33%')
+          Row() { Radio({ value: 'female', group: 'gender' }).checked(this.gender === 'female').onChange(() => { this.gender = 'female' }); Text('女').fontSize(16).fontColor(COLORS.text) }.width('33%')
+          Row() { Radio({ value: 'unknown', group: 'gender' }).checked(this.gender === 'unknown').onChange(() => { this.gender = 'unknown' }); Text('保密').fontSize(16).fontColor(COLORS.text) }.width('33%')
+        }.width('100%')
+      }.width('100%').margin({ bottom: 20 })
 
       Column() {
-        Text('生日')
-          .fontSize(14)
-          .fontColor(COLORS.text)
-          .width('100%')
-          .margin({ bottom: 8 })
-
+        Text('生日').fontSize(14).fontColor(COLORS.text).width('100%').margin({ bottom: 8 })
         TextInput({ placeholder: '请输入生日', text: this.birthday })
-          .width('100%')
-          .height(48)
-          .fontSize(16)
-          .fontColor(COLORS.text)
-          .backgroundColor(COLORS.background)
-          .borderRadius(8)
-          .padding({ left: 16, right: 16 })
-          .type(InputType.Normal)
-          .onChange((value: string) => {
-            this.birthday = value
-          })
-      }
-      .width('100%')
+          .width('100%').height(48).fontSize(16).fontColor(COLORS.text).backgroundColor(COLORS.background).borderRadius(8).padding({ left: 16, right: 16 }).type(InputType.Normal)
+          .onChange((value: string) => { this.birthday = value })
+      }.width('100%')
     }
-    .width('100%')
-    .padding(20)
-    .backgroundColor(COLORS.surface)
-    .margin({ top: 12 })
+    .width('100%').padding(20).backgroundColor(COLORS.surface).margin({ top: 12 })
   }
 
   build() {
@@ -438,43 +261,17 @@ struct EditProfilePage {
           this.BasicInfoSection()
           this.PersonalInfoSection()
           if (this.errorMessage) {
-            Text(this.errorMessage)
-              .fontSize(14)
-              .fontColor(COLORS.accent)
-              .width('100%')
-              .textAlign(TextAlign.Center)
-              .padding(12)
-              .backgroundColor('#FFE5E5')
-              .borderRadius(8)
-              .margin({ top: 20, left: 20, right: 20 })
+            Text(this.errorMessage).fontSize(14).fontColor(COLORS.accent).width('100%').textAlign(TextAlign.Center).padding(12).backgroundColor('#FFE5E5').borderRadius(8).margin({ top: 20, left: 20, right: 20 })
           }
-        }
-        .width('100%')
-        .padding({ bottom: 80 })
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .backgroundColor(COLORS.background)
+        }.width('100%').padding({ bottom: 80 })
+      }.width('100%').layoutWeight(1).backgroundColor(COLORS.background)
 
       if (this.isLoading) {
         Column() {
-          LoadingProgress()
-            .width(40)
-            .height(40)
-          Text('保存中...')
-            .fontSize(14)
-            .fontColor(COLORS.textSecondary)
-            .margin({ top: 16 })
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor('rgba(0,0,0,0.5)')
-        .position({ x: 0, y: 0 })
+          LoadingProgress().width(40).height(40)
+          Text('保存中...').fontSize(14).fontColor(COLORS.textSecondary).margin({ top: 16 })
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center).backgroundColor('rgba(0,0,0,0.5)').position({ x: 0, y: 0 })
       }
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(COLORS.background)
+    }.width('100%').height('100%').backgroundColor(COLORS.background)
   }
 }

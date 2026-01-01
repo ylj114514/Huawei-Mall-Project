@@ -1,295 +1,348 @@
 import router from '@ohos.router'
 import { ProductModel, MockData } from '../model/ProductModel'
-import { BottomNavBar } from '../components/BottomNavBar'
-// ✅ 引入数据库管理
-import { DatabaseManager } from '../database/DatabaseManager'
+import { User } from '../model/DataModel'
+import { AuthService } from '../services/AuthService'
+import common from '@ohos.app.ability.common'
+
+// =========================================
+// 1. 数据模型定义
+// =========================================
+
+// 路由参数类
+class ProductParams {
+  productId: string
+  constructor(productId: string) {
+    this.productId = productId
+  }
+}
+
+// 轮播图数据类
+class BannerItem {
+  title: string
+  subtitle: string
+  desc: string
+  bgColor: string
+
+  constructor(title: string, subtitle: string, desc: string, bgColor: string) {
+    this.title = title
+    this.subtitle = subtitle
+    this.desc = desc
+    this.bgColor = bgColor
+  }
+}
+
+// 现代化配色方案
+interface ColorScheme {
+  background: string
+  surface: string
+  primary: string
+  secondary: string
+  text: string
+  textSecondary: string
+  accent: string
+}
+
+const COLORS: ColorScheme = {
+  background: '#F5F7FA',
+  surface: '#FFFFFF',
+  primary: '#1A1A1A',
+  secondary: '#6C757D',
+  text: '#2C3E50',
+  textSecondary: '#7F8C8D',
+  accent: '#3498DB'
+}
 
 @Entry
 @Component
 struct Index {
+  @State allProducts: ProductModel[] = []
   @State products: ProductModel[] = []
-  @State filteredProducts: ProductModel[] = []
-  @State searchText: string = ''
-  @State selectedCategory: string = '全部'
-  @State isLoading: boolean = true
-  @State isSearching: boolean = false
 
-  // 商品分类
-  private categories: string[] = ['全部', '手机', '平板', '电脑', '耳机', '智能手表']
+  // ✅ 新增：搜索相关状态
+  @State searchSuggestions: ProductModel[] = []
+  @State isSearching: boolean = false
+  @State searchText: string = ''
+
+  @State user: User | null = null
+  @State isLoading: boolean = true
+  @State selectedCategory: string = ''
+
+  private authService: AuthService = AuthService.getInstance()
+
+  // 轮播图数据 (保留原配置)
+  private banners: BannerItem[] = [
+    new BannerItem('Mate 60 系列', '玄武架构 鸿蒙生态', '超光变影像 · 卫星通话', '#1A1A1A'),
+    new BannerItem('nova 12 系列', '潮流影像 超级快充', '人像大片 · 超级闪充', '#FF6B6B'),
+    new BannerItem('WATCH GT 4', '专业运动 健康管理', '100+运动模式 · 科学睡眠', '#4ECDC4')
+  ]
+
+  private categoryNames: string[] = ['手机', '笔记本', '平板', '手表', '耳机', '智慧屏', '相机', '音响']
 
   aboutToAppear() {
     this.loadData()
+    this.checkLoginStatus()
   }
 
-  // ✅ 数据加载逻辑（数据库 + Mock兜底）
-  private async loadData() {
-    this.isLoading = true
-    try {
-      // 1. 尝试从数据库获取 active 状态的商品
-      const dbRows = await DatabaseManager.getInstance().getAllProducts('active')
-      const mockProducts = MockData.generateProducts()
+  onPageShow() {
+    this.checkLoginStatus()
+  }
 
-      let combinedProducts: ProductModel[] = []
-
-      // 2. 如果数据库为空，直接使用 Mock 数据兜底显示
-      if (dbRows.length === 0) {
-        console.warn('数据库为空，使用 Mock 数据显示')
-        combinedProducts = mockProducts
-      } else {
-        // 3. 数据库有数据，进行转换
-        for (const row of dbRows) {
-          if (row.status === 'deleted') continue
-
-          const p = new ProductModel(
-            row.id, row.name, row.price, row.originalPrice,
-            row.description, row.detailDescription,
-            [], row.category, row.tags, row.rating, row.reviewCount, row.stock
-          )
-          p.sales = row.sales
-          p.isNew = row.isNew
-
-          // 图片恢复逻辑
-          const mockMatch = mockProducts.find(m => m.id === row.id)
-          if (mockMatch && mockMatch.images.length > 0) {
-            p.image = mockMatch.image
-            p.images = mockMatch.images
-          } else {
-            p.image = $r('app.media.APP')
-            p.images = [$r('app.media.APP')]
-          }
-          combinedProducts.push(p)
-        }
-      }
-
-      this.products = combinedProducts
-      this.filterProducts()
-
-    } catch (e) {
-      console.error('加载首页数据失败:', e)
-      // ✅ 出错时也用 Mock 数据兜底
-      this.products = MockData.generateProducts()
-      this.filterProducts()
-    } finally {
+  private loadData() {
+    setTimeout(() => {
+      this.allProducts = MockData.generateProducts()
+      this.products = this.allProducts
       this.isLoading = false
-    }
+    }, 500)
   }
 
-  private onSearch(text: string) {
-    this.searchText = text
-    this.isSearching = text.trim() !== ''
-    this.filterProducts()
+  private async checkLoginStatus() {
+    this.user = await this.authService.getCurrentUser()
   }
 
-  private filterProducts() {
-    let filtered = this.products
-
-    if (this.selectedCategory !== '全部') {
-      filtered = filtered.filter(product => {
-        if (product.category === this.selectedCategory) {
-          return true
-        }
-        return false
-      })
+  // ✅ 新增：搜索输入处理逻辑
+  private handleSearchInput(value: string) {
+    this.searchText = value
+    if (value.trim().length === 0) {
+      this.isSearching = false
+      this.searchSuggestions = []
+      this.products = this.allProducts
+      return
     }
 
-    if (this.searchText.trim() !== '') {
-      const query = this.searchText.toLowerCase()
-      filtered = filtered.filter(product =>
-      (product.name || '').toLowerCase().includes(query) ||
-      (product.description || '').toLowerCase().includes(query)
+    this.isSearching = true
+    const query = value.toLowerCase()
+
+    // 模糊匹配
+    this.searchSuggestions = this.allProducts.filter(p =>
+    p.name.toLowerCase().includes(query) ||
+      (p.description && p.description.toLowerCase().includes(query))
+    )
+
+    // 主列表也同步更新
+    this.products = this.searchSuggestions
+  }
+
+  // 根据分类筛选商品
+  private filterProducts(category: string) {
+    if (category === '' || category === '全部') {
+      this.products = this.allProducts
+    } else {
+      let actualCategory = category
+      if (category === '手表') actualCategory = '智能手表'
+      if (category === '电脑') actualCategory = '笔记本'
+
+      this.products = this.allProducts.filter(product =>
+      product.category.includes(actualCategory) ||
+      product.name.includes(actualCategory)
       )
     }
-
-    this.filteredProducts = filtered
-  }
-
-  private onCategorySelect(category: string) {
-    this.selectedCategory = category
-    this.filterProducts()
   }
 
   private onProductClick(product: ProductModel) {
+    this.isSearching = false // 点击后关闭搜索状态
     router.pushUrl({
       url: 'pages/ProductDetailPage',
-      params: {
-        product: product
-      }
+      params: new ProductParams(product.id)
     })
   }
 
-  @Builder
-  HeroSection() {
-    Stack() {
-      // 背景渐变
-      Column()
-        .width('100%')
-        .height(280)
-        .linearGradient({
-          direction: GradientDirection.Bottom,
-          colors: [
-            ['#1a1a1a', 0.0],
-            ['#2d2d2d', 0.5],
-            ['#1a1a1a', 1.0]
-          ]
-        })
+  private getIcon(category: string): string {
+    if (category === '手机') return '📱'
+    if (category === '笔记本') return '💻'
+    if (category === '平板') return '📲'
+    if (category === '手表') return '⌚'
+    if (category === '耳机') return '🎧'
+    if (category === '智慧屏') return '📺'
+    if (category === '相机') return '📷'
+    if (category === '音响') return '🔊'
+    return '📱'
+  }
 
-      // 主要内容
-      Column() {
-        // 品牌标题
-        Text('HUAWEI')
-          .fontSize(32)
-          .fontColor(Color.White)
-          .fontWeight(FontWeight.Bold)
-          .letterSpacing(4)
-          .margin({ top: 60, bottom: 20 })
+  // =========================================
+  // UI 构建部分
+  // =========================================
+
+  @Builder
+  Header() {
+    Column() {
+      Row() {
+        // Logo
+        Column() {
+          Text('HUAWEI')
+            .fontSize(24)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(COLORS.primary)
+          Text('华为商城')
+            .fontSize(12)
+            .fontColor(COLORS.secondary)
+            .margin({ top: -4 })
+        }
+        .alignItems(HorizontalAlign.Start)
+
+        Blank()
 
         // 搜索栏
         Row() {
-          Text('🔍')
-            .fontSize(18)
-            .fontColor('#666666')
-            .margin({ left: 16 })
-          TextInput({
-            placeholder: '搜索您想要的产品',
-            text: this.searchText
-          })
-            .fontSize(16)
-            // ✅ 修改点：字体颜色改为黑色
-            .fontColor(Color.Black)
-            .backgroundColor(Color.Transparent)
-            .layoutWeight(1)
-            .placeholderColor('#666666')
+          TextInput({ placeholder: '搜索商品', text: this.searchText })
+            .width(200)
+            .height(36)
+            .fontSize(14)
+            .backgroundColor('#F0F2F5')
+            .borderRadius(18)
+            .padding({ left: 16 })
             .onChange((value: string) => {
-              this.searchText = value
-              this.onSearch(value)
+              this.handleSearchInput(value) // ✅ 绑定搜索逻辑
             })
         }
-        .width('90%')
-        .height(48)
-        .backgroundColor('#ffffff15')
-        .borderRadius(24)
-        .backdropBlur(10)
-        .padding({ right: 16 })
 
-        // 品牌标语
-        Text('构建万物互联的智能世界')
-          .fontSize(14)
-          .fontColor('#ffffff80')
-          .letterSpacing(2)
-          .margin({ top: 20 })
-      }
-      .width('100%')
-      .height('100%')
-    }
-    .width('100%')
-    .height(280)
-  }
+        Blank().width(20)
 
-  build() {
-    Column() {
-      // Hero区域
-      this.HeroSection()
-
-      // 主要内容
-      Scroll() {
-        Column() {
-          // 分类标题
-          Row() {
-            Text('产品分类')
-              .fontSize(24)
-              .fontColor('#1a1a1a')
-              .fontWeight(FontWeight.Bold)
-            Blank()
-          }
-          .width('100%')
-          .padding(20)
-
-          // 分类标签
-          Scroll() {
-            Row({ space: 12 }) {
-              ForEach(this.categories, (category: string) => {
-                Button(category)
-                  .fontSize(14)
-                  .fontColor(this.selectedCategory === category ? Color.White : '#1a1a1a')
-                  .backgroundColor(this.selectedCategory === category ? '#007AFF' : '#f0f0f0')
-                  .borderRadius(20)
-                  .padding({ left: 24, right: 24, top: 12, bottom: 12 })
-                  .shadow(this.selectedCategory === category ? {
-                    radius: 8,
-                    color: '#007AFF30',
-                    offsetX: 0,
-                    offsetY: 2
-                  } : undefined)
-                  .onClick(() => this.onCategorySelect(category))
-              })
-            }
-            .width('100%')
-            .padding({ left: 20, right: 20 })
-          }
-          .width('100%')
-          .scrollBar(BarState.Off)
-          .scrollable(ScrollDirection.Horizontal)
-          .height(50)
-          .margin({ bottom: 20 })
-
-          // 商品网格列表
-          if (this.filteredProducts.length > 0) {
-            Grid() {
-              ForEach(this.filteredProducts, (product: ProductModel) => {
-                GridItem() {
-                  this.ProductCard(product)
-                }
-              }, (product: ProductModel) => product.id)
-            }
-            .columnsTemplate('1fr 1fr')
-            .rowsGap(16)
-            .columnsGap(16)
-            .padding(20)
-            .width('100%')
-          } else if (!this.isLoading) {
-            // 空状态
-            Column() {
-              Text('📦')
-                .fontSize(60)
-                .margin({ bottom: 16 })
-              Text(this.searchText.trim() !== '' ? '没有找到相关商品' : '暂无商品')
-                .fontSize(16)
-                .fontColor('#666666')
-            }
-            .width('100%')
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
+        // 用户头像
+        Button() {
+          if (this.user && this.user.avatar) {
+            Image(this.user.avatar)
+              .width(36)
+              .height(36)
+              .borderRadius(18)
           } else {
-            // 加载状态
-            Column() {
-              LoadingProgress()
-                .width(40)
-                .height(40)
-              Text('加载中...')
-                .fontSize(14)
-                .fontColor('#666666')
-                .margin({ top: 16 })
-            }
-            .width('100%')
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
+            Text('👤')
+              .fontSize(22)
           }
         }
-        .width('100%')
-        .padding({ bottom: 80 })
+        .width(36)
+        .height(36)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          if (this.user) {
+            router.pushUrl({ url: 'pages/UserCenterPage' })
+          } else {
+            router.pushUrl({ url: 'pages/LoginPage' })
+          }
+        })
       }
       .width('100%')
-      .layoutWeight(1)
-      .backgroundColor('#f5f5f7')
+      .padding({ left: 20, right: 20, top: 12, bottom: 12 })
+      .backgroundColor(COLORS.surface)
 
-      // 底部导航栏
-      BottomNavBar()
-        .position({ x: 0, y: '100%' })
-        .translate({ x: 0, y: -60 })
+      // ✅ 新增：搜索联想列表 (悬浮在 Header 下方)
+      if (this.isSearching && this.searchSuggestions.length > 0) {
+        List() {
+          ForEach(this.searchSuggestions, (item: ProductModel) => {
+            ListItem() {
+              Row() {
+                Text('🔍').fontSize(12).fontColor(COLORS.secondary).margin({ right: 8 })
+                Text(item.name)
+                  .fontSize(14)
+                  .fontColor(COLORS.text)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .padding(12)
+              .backgroundColor(COLORS.surface)
+              .onClick(() => this.onProductClick(item))
+            }
+          })
+        }
+        .width('100%')
+        .backgroundColor(COLORS.surface)
+        .shadow({ radius: 10, color: 'rgba(0,0,0,0.1)', offsetY: 5 })
+        .position({ x: 0, y: 60 })
+        .zIndex(999)
+        // ✅ 核心修复：使用 constraintSize 而不是 constraints
+        .constraintSize({ maxHeight: 200 })
+      }
+    }
+    .zIndex(100) // 确保 Header 整体在最上层
+  }
+
+  @Builder
+  HeroBanner() {
+    Swiper() {
+      ForEach(this.banners, (banner: BannerItem) => {
+        Column() {
+          Text(banner.title)
+            .fontSize(28)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Color.White)
+            .margin({ bottom: 8 })
+
+          Text(banner.subtitle)
+            .fontSize(16)
+            .fontColor('rgba(255,255,255,0.9)')
+            .margin({ bottom: 8 })
+
+          Text(banner.desc)
+            .fontSize(14)
+            .fontColor('rgba(255,255,255,0.8)')
+        }
+        .width('100%')
+        .height(200)
+        .padding(20)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(banner.bgColor)
+        .borderRadius(16)
+      })
     }
     .width('100%')
-    .height('100%')
-    .backgroundColor('#f5f5f7')
+    .height(200)
+    .autoPlay(true)
+    .interval(3000)
+    .indicatorStyle({
+      size: 6,
+      left: 20,
+      right: 20,
+      bottom: 12,
+      color: 'rgba(255,255,255,0.4)',
+      selectedColor: Color.White
+    })
+    .padding({ left: 20, right: 20 })
+  }
+
+  @Builder
+  CategoryGrid() {
+    Column() {
+      Text('商品分类')
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(COLORS.text)
+        .width('100%')
+        .margin({ bottom: 20 })
+        .padding({ left: 20 })
+
+      Scroll() {
+        Row({ space: 12 }) {
+          ForEach(this.categoryNames, (item: string) => {
+            Column() {
+              Text(this.getIcon(item))
+                .fontSize(30)
+                .margin({ bottom: 8 })
+              Text(item)
+                .fontSize(12)
+                .fontColor(COLORS.text)
+            }
+            .width(80)
+            .height(80)
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor(this.selectedCategory === item ? '#E8E8E8' : Color.Transparent)
+            .borderRadius(8)
+            .onClick(() => {
+              this.selectedCategory = item
+              this.filterProducts(item)
+            })
+          })
+        }
+        .padding({ left: 20, right: 20 })
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .width('100%')
+      .height(120)
+      .scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .backgroundColor(COLORS.surface)
+    .margin({ top: 12 })
   }
 
   @Builder
@@ -297,94 +350,187 @@ struct Index {
     Column() {
       // 图片容器
       Stack() {
-        // 商品图片
         Image(product.image)
           .width('100%')
-          .height(200)
-          .objectFit(ImageFit.Cover)
-          .borderRadius({ topLeft: 20, topRight: 20 })
-          .backgroundColor('#f0f0f0')
-          .alt('商品图片')
+          .height(180)
+          .objectFit(ImageFit.Contain)
+          .backgroundColor('#F8F9FA')
+          .borderRadius({ topLeft: 12, topRight: 12 })
 
         // 折扣标签
-        if (product.originalPrice > product.price) {
-          Text(`${Math.floor(((product.originalPrice - product.price) / product.originalPrice) * 100)}% OFF`)
+        if (product.originalPrice && product.originalPrice > product.price) {
+          Text(`-${Math.floor(((product.originalPrice - product.price) / product.originalPrice) * 100)}%`)
             .fontSize(12)
             .fontColor(Color.White)
             .fontWeight(FontWeight.Bold)
-            .backgroundColor('#FF3B30')
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .borderRadius({ bottomLeft: 12, topRight: 20 })
+            .backgroundColor('#FF6B6B')
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .borderRadius({ bottomLeft: 8, topRight: 12 })
             .position({ x: 0, y: 0 })
         }
       }
 
       // 商品信息
       Column() {
-        // 商品名称
         Text(product.name)
           .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#1a1a1a')
+          .fontColor(COLORS.text)
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
           .margin({ bottom: 8 })
 
-        // 价格区域
+        // 评分
         Row() {
-          Row() {
-            Text('¥')
+          ForEach([1, 2, 3, 4, 5], (star: number) => {
+            Text('★')
               .fontSize(12)
-              .fontColor('#FF3B30')
-              .margin({ top: 2 })
-            Text(`${product.price}`)
-              .fontSize(20)
-              .fontColor('#FF3B30')
-              .fontWeight(FontWeight.Bold)
-          }
-
-          Blank()
-
-          // 加号按钮
-          Button() {
-            Text('+')
-              .fontSize(20)
-              .fontColor(Color.White)
-              .fontWeight(FontWeight.Bold)
-          }
-          .width(32)
-          .height(32)
-          .backgroundColor('#007AFF')
-          .borderRadius(16)
-          .shadow({
-            radius: 8,
-            color: '#007AFF40',
-            offsetX: 0,
-            offsetY: 2
+              .fontColor(star <= 4 ? '#FFD700' : '#E0E0E0')
           })
-          .onClick(() => {
-            // 简单的加购反馈
-          })
+          Text(' 4.8')
+            .fontSize(12)
+            .fontColor(COLORS.textSecondary)
+            .margin({ left: 4 })
+          Text('(2k+)')
+            .fontSize(12)
+            .fontColor(COLORS.textSecondary)
         }
         .width('100%')
-        .alignItems(VerticalAlign.Bottom)
+        .margin({ bottom: 8 })
+
+        // 价格
+        Row() {
+          Text(`¥${product.price}`)
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FF6B6B')
+
+          if (product.originalPrice && product.originalPrice > product.price) {
+            Text(`¥${product.originalPrice}`)
+              .fontSize(14)
+              .fontColor(COLORS.textSecondary)
+              .decoration({ type: TextDecorationType.LineThrough })
+              .margin({ left: 8 })
+          }
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Start)
       }
+      .padding(12)
       .width('100%')
-      .padding(16)
     }
     .width('100%')
-    .height(300)
-    .backgroundColor(Color.White)
-    .borderRadius(20)
+    .backgroundColor(COLORS.surface)
+    .borderRadius(12)
     .shadow({
-      radius: 12,
+      radius: 6,
       color: '#00000010',
       offsetX: 0,
-      offsetY: 4
+      offsetY: 2
     })
-    .onClick(() => {
-      this.onProductClick(product)
-    })
+    .onClick(() => this.onProductClick(product))
+  }
+
+  @Builder
+  BottomNav() {
+    Row() {
+      // 首页
+      Column() {
+        Text('🏠')
+          .fontSize(28)
+          .margin({ bottom: 4 })
+        Text('首页')
+          .fontSize(12)
+          .fontColor(COLORS.primary)
+      }
+      .width('50%')
+      .height(60)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor('#F0F2F5')
+
+      // 个人中心
+      Column() {
+        Text('👤')
+          .fontSize(28)
+          .margin({ bottom: 4 })
+        Text('我的')
+          .fontSize(12)
+          .fontColor(COLORS.secondary)
+      }
+      .width('50%')
+      .height(60)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        if (this.user) {
+          router.pushUrl({ url: 'pages/UserCenterPage' })
+        } else {
+          router.pushUrl({ url: 'pages/LoginPage' })
+        }
+      })
+    }
+    .width('100%')
+    .height(60)
+    .backgroundColor(COLORS.surface)
+    .border({ width: { top: 0.5 }, color: '#E5E5E5' })
+  }
+
+  build() {
+    Column() {
+      // 顶部导航
+      this.Header()
+
+      // 主内容
+      Scroll() {
+        Column() {
+          // 轮播图
+          this.HeroBanner()
+
+          // 分类网格
+          this.CategoryGrid()
+
+          // 推荐商品
+          Column() {
+            Row() {
+              Text('推荐商品')
+                .fontSize(18)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(COLORS.text)
+              Blank()
+              Text('查看全部')
+                .fontSize(14)
+                .fontColor(COLORS.textSecondary)
+            }
+            .width('100%')
+            .padding({ left: 20, right: 20, top: 24, bottom: 16 })
+
+            // 商品网格
+            Grid() {
+              ForEach(this.products, (product: ProductModel) => {
+                GridItem() {
+                  this.ProductCard(product)
+                }
+              }, (product: ProductModel) => product.id)
+            }
+            .columnsTemplate('1fr 1fr')
+            .rowsGap(12)
+            .columnsGap(12)
+            .padding({ left: 20, right: 20, bottom: 80 })
+          }
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .backgroundColor(COLORS.background)
+      .edgeEffect(EdgeEffect.Spring)
+      .scrollBar(BarState.Off)
+
+      // 底部导航
+      this.BottomNav()
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(COLORS.background)
   }
 }

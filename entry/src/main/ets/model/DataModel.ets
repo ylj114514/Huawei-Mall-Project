@@ -16,40 +16,36 @@ export class CartItem {
     this.addedTime = Date.now()
   }
 
-  // 获取小计金额
   getSubtotal(): number {
     return this.product.price * this.quantity
   }
 
-  // 增加数量
   increaseQuantity(): void {
     if (this.quantity < this.product.stock) {
       this.quantity++
     }
   }
 
-  // 减少数量
   decreaseQuantity(): void {
     if (this.quantity > 1) {
       this.quantity--
     }
   }
 
-  // 是否有效（库存足够）
   isValid(): boolean {
     return this.quantity <= this.product.stock && this.product.stock > 0
   }
 }
 
-// 用户信息
+// ✅ 核心修改：User 类深度适配 AGC 登录
 export class User {
   id: string
-  account: string  // 账号
-  password: string // 密码
+  account: string
+  password: string
   username: string
   email: string
   phone: string
-  avatar: string
+  avatar: ResourceStr // 兼容 string URL 或 Resource
   realName: string
   gender: 'male' | 'female' | 'unknown'
   birthday: string
@@ -58,26 +54,56 @@ export class User {
   level: 'bronze' | 'silver' | 'gold' | 'platinum'
   totalSpent: number
   points: number
+  token: string // 新增 token 字段
 
-  constructor(account: string, password: string) {
+  // ✅ 修改构造函数：兼容 2个参数（旧代码）和 6个参数（AuthService）
+  // 参数使用了默认值，这样既能 new User('acc', 'pwd') 也能传更多参数
+  constructor(
+    idOrAccount: string,
+    arg2: string,
+    username: string = '',
+    avatar: ResourceStr = '',
+    level: string = 'bronze',
+    token: string = ''
+  ) {
+    // 判断第一个参数是 ID 还是 Account (简单判断：如果 arg2 是 'password' 格式或很短，可能是密码)
+    // 这里为了兼容 AuthService 的调用：new User(uid, phone, name, avatar, level, token)
+
+    // 默认初始化
     this.id = `user_${Date.now()}`
-    this.account = account
-    this.password = password
-    this.username = account // 默认用户名为账号
-    this.email = ''
+    this.account = ''
+    this.password = ''
+    this.username = username || '华为用户'
     this.phone = ''
-    this.avatar = 'https://via.placeholder.com/100x100'
+    this.avatar = avatar || $r('app.media.app_icon') // 默认给个头像防止空
+    this.level = (level as 'bronze' | 'silver' | 'gold' | 'platinum') || 'bronze'
+    this.token = token
+
+    // 其他字段初始化
+    this.email = ''
     this.realName = ''
     this.gender = 'unknown'
     this.birthday = ''
     this.registrationTime = Date.now()
     this.lastLoginTime = Date.now()
-    this.level = 'bronze'
     this.totalSpent = 0
     this.points = 0
+
+    // ✅ 智能识别参数逻辑
+    if (username === '' && level === 'bronze' && token === '') {
+      // 场景 A: 旧代码 new User(account, password)
+      this.account = idOrAccount
+      this.password = arg2
+      this.username = idOrAccount
+    } else {
+      // 场景 B: AuthService 调用 new User(uid, phone, name, avatar, level, token)
+      this.id = idOrAccount
+      this.phone = arg2
+      this.account = arg2 // 手机号作为账号
+      this.password = ''  // 验证码登录没有密码
+    }
   }
 
-  // 获取用户等级显示文本
   getLevelText(): string {
     switch (this.level) {
       case 'bronze': return '青铜会员'
@@ -88,7 +114,6 @@ export class User {
     }
   }
 
-  // 获取等级颜色
   getLevelColor(): string {
     switch (this.level) {
       case 'bronze': return '#CD7F32'
@@ -131,7 +156,6 @@ export class Comment {
     this.isTopComment = false
   }
 
-  // 格式化时间
   getFormattedTime(): string {
     const now = Date.now()
     const diff = now - this.createTime
@@ -148,13 +172,11 @@ export class Comment {
     return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
   }
 
-  // 点赞
   like(): void {
     this.isLiked = !this.isLiked
     this.likes += this.isLiked ? 1 : -1
   }
 
-  // 切换点赞状态（支持指定用户）
   toggleLike(userId: string): void {
     if (this.isLiked) {
       this.isLiked = false
@@ -192,7 +214,6 @@ export class Order {
     this.orderTime = Date.now()
   }
 
-  // 获取状态文本
   getStatusText(): string {
     switch (this.status) {
       case 'pending': return '待付款'
@@ -205,7 +226,6 @@ export class Order {
     }
   }
 
-  // 获取状态颜色
   getStatusColor(): string {
     switch (this.status) {
       case 'pending': return '#FF6B35'
@@ -223,7 +243,6 @@ export class Order {
 export class OrderItem {
   productId: string
   productName: string
-  // ✅ 核心修复：类型改为 ResourceStr，兼容上传的图片路径
   productImage: ResourceStr
   price: number
   quantity: number
@@ -231,7 +250,6 @@ export class OrderItem {
   constructor(product: ProductModel, quantity: number) {
     this.productId = product.id
     this.productName = product.name
-    // ✅ 适配逻辑：如果有图取第一张，否则给默认图
     this.productImage = product.images.length > 0 ? product.images[0] : $r('app.media.APP')
     this.price = product.price
     this.quantity = quantity
@@ -261,12 +279,10 @@ export class Address {
     this.isDefault = isDefault
   }
 
-  // 获取完整地址
   getFullAddress(): string {
     return `${this.province}${this.city}${this.district}${this.detail}`
   }
 
-  // 验证地址有效性
   isValid(): boolean {
     return this.name && this.phone && this.province && this.city && this.detail ? true : false
   }
