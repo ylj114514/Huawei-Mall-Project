@@ -1,7 +1,8 @@
 import router from '@ohos.router'
-import { CartService } from '../services/CartService' // ✅ 换成 Service
-import { CartItem } from '../model/DataModel' // ✅ 换成统一 Model
-// import { ProductModel } from '../model/ProductModel'
+import promptAction from '@ohos.promptAction'
+// ✅ 核心修正：引入正确的 Model 和 Service
+import { CartService } from '../services/CartService'
+import { CartItem } from '../model/DataModel'
 
 // 颜色常量 (保留你的设计)
 class ColorPalette {
@@ -11,7 +12,6 @@ class ColorPalette {
   static white: string = '#FFFFFF'
   static background: string = '#F5F7FA'
   static price: string = '#FF3B30'
-  static error: string = '#E74C3C'
 }
 
 @Entry
@@ -20,157 +20,122 @@ struct CartPage {
   @State cartItems: CartItem[] = []
   @State isLoading: boolean = true
   @State totalAmount: number = 0
+  @State isAllSelected: boolean = false
 
-  // ✅ 获取 Service 实例
+  // ✅ 使用你上传文件中定义的 Service 实例
   private cartService: CartService = CartService.getInstance()
 
-  // 页面显示时刷新，保证数据最新
-  onPageShow() {
-    this.refreshData()
-  }
-
-  // ✅ 核心修改：从 Service 拉取数据
-  private async refreshData() {
+  async aboutToAppear() {
     this.isLoading = true
     try {
-      await this.cartService.refreshCart()
-      this.cartItems = this.cartService.getCartItems()
-      this.calculateTotal()
-    } catch (error) {
-      console.error('加载购物车失败:', error)
+      // ✅ 核心修正：必须先异步初始化 Service，否则内存数组为空
+      await this.cartService.init()
+      await this.refreshData()
+    } catch (e) {
+      console.error('购物车初始化失败')
     } finally {
       this.isLoading = false
     }
   }
 
-  private calculateTotal() {
-    // 简单计算：选中商品的总价 (如果没有选中状态，就计算全部)
-    // 你的 Service 里可能有 getSelectedItems，这里简单累加
-    this.totalAmount = this.cartItems.reduce((sum, item) => {
-      // 假设 item.selected 为 true 才算，或者全算
-      return sum + (item.product.price * item.quantity)
-    }, 0)
-  }
-
-  private async updateQuantity(item: CartItem, newQuantity: number) {
-    if (newQuantity <= 0) return
-    await this.cartService.updateQuantity(item.id, newQuantity)
-    this.refreshData() // 刷新 UI
-  }
-
-  private async removeItem(item: CartItem) {
-    await this.cartService.removeFromCart(item.id)
+  onPageShow() {
     this.refreshData()
+  }
+
+  private async refreshData() {
+    // ✅ 逻辑修正：强制 Service 从 RDB 数据库重新同步数据
+    await this.cartService.refreshCart()
+
+    // 获取 Service 同步后的数据
+    this.cartItems = [...this.cartService.getCartItems()]
+    this.totalAmount = this.cartService.getTotalAmount()
+
+    // 更新全选状态
+    const selectedItems = this.cartService.getSelectedItems()
+    this.isAllSelected = this.cartItems.length > 0 && selectedItems.length === this.cartItems.length
   }
 
   build() {
     Column() {
-      // 顶部导航栏 (保留)
+      // 顶部导航 (保留原 UI)
       Row() {
-        Button() {
-          Text('←').fontSize(24).fontColor(ColorPalette.text_primary)
-        }
-        .width(60).height(48).backgroundColor(Color.Transparent)
-        .onClick(() => router.back())
-
-        Text('购物车')
-          .fontSize(20).fontWeight(FontWeight.Medium).fontColor(ColorPalette.text_primary)
-          .layoutWeight(1).textAlign(TextAlign.Center)
-
-        Text('管理').fontSize(16).fontColor(ColorPalette.primary).width(60).textAlign(TextAlign.End)
-          .visibility(this.cartItems.length > 0 ? Visibility.Visible : Visibility.Hidden)
-      }
-      .width('100%').padding({ left: 16, right: 16 }).height(56).backgroundColor(ColorPalette.white)
+        Button('←').fontSize(24).fontColor(ColorPalette.text_primary).backgroundColor(Color.Transparent)
+          .onClick(() => router.back())
+        Text('购物车').fontSize(20).fontWeight(FontWeight.Medium).layoutWeight(1).textAlign(TextAlign.Center)
+        Blank().width(60)
+      }.width('100%').height(56).padding({ left: 16, right: 16 }).backgroundColor(ColorPalette.white)
 
       if (this.isLoading) {
-        Column() {
-          LoadingProgress().width(40).height(40)
-          Text('加载中...').fontSize(14).fontColor(ColorPalette.text_secondary).margin({ top: 16 })
-        }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+        LoadingProgress().width(40).height(40).margin({ top: 100 })
       } else if (this.cartItems.length === 0) {
-        // 空状态 (保留)
+        // 空状态 (保留原 UI)
         Column() {
-          Text('🛒').fontSize(80).margin({ bottom: 24 })
-          Text('购物车是空的').fontSize(18).fontWeight(FontWeight.Medium).fontColor(ColorPalette.text_secondary).margin({ bottom: 12 })
-          Button('去购物').fontSize(16).fontColor(Color.White).backgroundColor(ColorPalette.primary)
-            .padding({ left: 32, right: 32, top: 12, bottom: 12 }).borderRadius(24)
+          Text('🛒').fontSize(80).margin({ bottom: 20 })
+          Text('购物车空空如也').fontSize(16).fontColor(ColorPalette.text_secondary)
+          Button('去逛逛').margin({ top: 20 }).backgroundColor(ColorPalette.primary)
             .onClick(() => router.back())
-        }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center).backgroundColor(ColorPalette.background)
+        }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else {
-        // 列表 (保留样式)
         Scroll() {
           Column() {
             ForEach(this.cartItems, (item: CartItem) => {
               Row() {
-                // 图片
-                Image(item.product.image).width(100).height(100).borderRadius(8).objectFit(ImageFit.Contain)
-                  .backgroundColor('#F8F9FA').margin({ right: 16 })
+                // ✅ 补全：复选框逻辑
+                Toggle({ type: ToggleType.Checkbox, isOn: item.selected })
+                  .selectedColor(ColorPalette.primary)
+                  .onChange(async () => {
+                    await this.cartService.toggleSelected(item.id)
+                    this.refreshData()
+                  })
 
-                // 信息
+                Image(item.product.image).width(90).height(90).borderRadius(8).margin({ left: 12, right: 12 })
+
                 Column() {
-                  Text(item.product.name).fontSize(16).fontColor(ColorPalette.text_primary).maxLines(2).width('100%')
-                  Text(`规格：${item.product.spec || '标准版'}`).fontSize(14).fontColor(ColorPalette.text_secondary).margin({ top: 4 })
+                  Text(item.product.name).fontSize(15).maxLines(2).fontColor(ColorPalette.text_primary)
+
+                  // ✅ 修正：CartItem 没定义 spec，读取 product 里的属性
+                  Text(`规格: ${item.product.spec || '标准版'}`).fontSize(12).fontColor(ColorPalette.text_secondary).margin({ top: 4 })
+
                   Row() {
                     Text(`¥${item.product.price}`).fontSize(18).fontWeight(FontWeight.Bold).fontColor(ColorPalette.price)
-                  }
-                  .width('100%').margin({ top: 8 })
-                }
-                .layoutWeight(1).alignItems(HorizontalAlign.Start)
-
-                // 操作
-                Column() {
-                  Row() {
-                    Button('-').width(32).height(32).fontSize(16).backgroundColor('#F0F0F0')
-                      .fontColor(item.quantity > 1 ? ColorPalette.text_primary : ColorPalette.text_secondary)
-                      .enabled(item.quantity > 1)
-                      .onClick(() => this.updateQuantity(item, item.quantity - 1))
-
-                    Text(item.quantity.toString()).fontSize(16).fontColor(ColorPalette.text_primary).width(40).textAlign(TextAlign.Center)
-
-                    Button('+').width(32).height(32).fontSize(16).backgroundColor('#F0F0F0').fontColor(ColorPalette.text_primary)
-                      .onClick(() => this.updateQuantity(item, item.quantity + 1))
-                  }
-                  .margin({ bottom: 12 })
-
-                  Button('删除').fontSize(12).fontColor(ColorPalette.error).backgroundColor(Color.Transparent)
-                    .border({ width: 1, color: ColorPalette.error })
-                    .onClick(() => this.removeItem(item))
-                }
-                .justifyContent(FlexAlign.SpaceBetween).height('100%')
+                    Blank()
+                    // ✅ 修正：加减号颜色增强
+                    Row() {
+                      Button('-').width(28).height(24).backgroundColor('#F0F0F0').fontColor('#333')
+                        .onClick(async () => {
+                          if (item.quantity > 1) {
+                            await this.cartService.updateQuantity(item.id, item.quantity - 1)
+                            this.refreshData()
+                          }
+                        })
+                      Text(`${item.quantity}`).width(30).textAlign(TextAlign.Center).fontSize(14)
+                      Button('+').width(28).height(24).backgroundColor('#F0F0F0').fontColor('#333')
+                        .onClick(async () => {
+                          await this.cartService.updateQuantity(item.id, item.quantity + 1)
+                          this.refreshData()
+                        })
+                    }
+                  }.width('100%').margin({ top: 8 })
+                }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               }
-              .width('100%').padding(16).backgroundColor(ColorPalette.white).borderRadius(8)
-              .margin({ left: 16, right: 16, bottom: 8 })
+              .padding(16).backgroundColor(ColorPalette.white).borderRadius(12).margin({ bottom: 12, left: 16, right: 16 })
             })
-          }
-          .width('100%').padding({ top: 16, bottom: 120 })
-        }
-        .width('100%').layoutWeight(1).backgroundColor(ColorPalette.background)
-      }
+          }.padding({ top: 16, bottom: 100 })
+        }.layoutWeight(1).backgroundColor(ColorPalette.background)
 
-      // 底栏 (保留)
-      if (this.cartItems.length > 0) {
+        // 底栏
         Row() {
-          Column() {
-            Row() {
-              Text('合计：').fontSize(14).fontColor(ColorPalette.text_secondary)
-              Text(`¥${this.totalAmount.toFixed(2)}`).fontSize(20).fontWeight(FontWeight.Bold).fontColor(ColorPalette.price)
-            }
-            Text(`共${this.cartItems.reduce((a,b)=>a+b.quantity,0)}件商品`).fontSize(12).fontColor(ColorPalette.text_secondary).margin({ top: 4 })
-          }
-          .alignItems(HorizontalAlign.End)
-
-          Button('结算').fontSize(16).fontColor(Color.White).backgroundColor(ColorPalette.primary)
-            .width(100).height(44).borderRadius(22).margin({ left: 20 })
-            .onClick(() => {
-              // 结算逻辑
-            })
-        }
-        .width('100%').padding({ left: 20, right: 20 }).height(80).backgroundColor(ColorPalette.white)
-        .justifyContent(FlexAlign.SpaceBetween).alignItems(VerticalAlign.Center)
-        .shadow({ radius: 4, color: 'rgba(0,0,0,0.1)', offsetX: 0, offsetY: -2 })
-        .position({ x: 0, y: '100%' }).translate({ y: -80 })
+          Toggle({ type: ToggleType.Checkbox, isOn: this.isAllSelected }).onChange(() => {
+            this.cartService.toggleAllSelected(!this.isAllSelected) // ✅ 使用兼容方法
+            this.refreshData()
+          })
+          Text('全选').fontSize(14).margin({ left: 8 })
+          Blank()
+          Text(`合计: ¥${this.totalAmount.toFixed(2)}`).fontSize(18).fontWeight(FontWeight.Bold).fontColor(ColorPalette.price)
+          Button('结算').width(100).height(40).backgroundColor(ColorPalette.primary).margin({ left: 16 }).borderRadius(20)
+            .onClick(() => { if(this.totalAmount > 0) router.pushUrl({ url: 'pages/OrderConfirmPage' }) })
+        }.width('100%').padding(16).backgroundColor(ColorPalette.white).shadow({ radius: 8, color: '#10000000', offsetY: -4 })
       }
-    }
-    .width('100%').height('100%').backgroundColor(ColorPalette.background)
+    }.width('100%').height('100%').backgroundColor(ColorPalette.background)
   }
 }

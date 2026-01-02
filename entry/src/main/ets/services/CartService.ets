@@ -95,19 +95,21 @@ export class CartService {
 
   // ================= 业务操作 (直接写库) =================
 
+  // ✅ 请确保你的 addToCart 是这样的逻辑
   public async addToCart(product: ProductModel, quantity: number = 1): Promise<boolean> {
     try {
+      // 1. 写入 RDB 数据库
       const success = await this.db.addToCart(product.id, quantity, product.spec || '标准版')
       if (success) {
+        // 2. 关键：必须立即调用 refreshCart 使得内存中的 cartItems 数组得到更新
         await this.refreshCart()
       }
       return success
     } catch (e) {
-      console.error('addToCart failed:', e)
+      console.error('addToCart Error', e)
       return false
     }
   }
-
   public async removeFromCart(cartItemId: string): Promise<boolean> {
     try {
       const id = parseInt(cartItemId)

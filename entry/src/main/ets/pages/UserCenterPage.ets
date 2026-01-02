@@ -48,7 +48,6 @@ struct UserCenterPage {
       this.isLoading = false;
     }
   }
-
   /**
    * 加载统计信息
    */
@@ -56,7 +55,7 @@ struct UserCenterPage {
     try {
       // ✅ 适配逻辑：刷新购物车
       await this.cartService.refreshCart();
-      this.cartCount = this.cartService.getTotalCount();
+      this.cartCount = this.cartService.getTotalAmount();
     } catch (error) {
       console.error('加载统计信息失败:', error);
       this.cartCount = 0;

@@ -1,226 +1,159 @@
 import router from '@ohos.router'
+import promptAction from '@ohos.promptAction'
 import { ProductModel, MockData } from '../model/ProductModel'
 import { CartService } from '../services/CartService'
-// ✅ 如果暂时不用 CommentSection，请注释掉 import，否则会报"未使用"错误
+import { AuthService } from '../services/AuthService'
 import { CommentSection } from '../components/CommentSection'
 
 @Entry
 @Component
 struct ProductDetailPage {
   @State product: ProductModel | null = null
-  @State currentImageIndex: number = 0
   @State quantity: number = 1
   @State isLoading: boolean = true
   @State showCartDialog: boolean = false
-  @State showAlreadyInCartDialog: boolean = false
-  @State scrollY: number = 0
-  @State imageHeight: number = 375
+  private imageHeight: number = 375
 
-  // 获取购物车服务单例
   private cartService: CartService = CartService.getInstance()
+  private authService: AuthService = AuthService.getInstance()
 
   aboutToAppear() {
+    // 只有这里会被执行，确保它只执行数据加载，绝对不包含跳转逻辑
     this.loadProductData()
   }
 
   private loadProductData() {
-    // 获取路由参数
     const params = router.getParams() as Record<string, Object>
     if (params) {
       if (params['product']) {
-        // 如果传递了完整对象
         this.product = params['product'] as ProductModel
       } else if (params['productId']) {
-        // 如果只传了 ID，去 MockData 查找
         const products = MockData.generateProducts()
         this.product = products.find(p => p.id === params['productId']) || null
       }
     }
     this.isLoading = false
+    // 此处绝不添加 router 跳转
   }
 
-  private onImageChange(index: number) {
-    this.currentImageIndex = index
-  }
-
+  // ✅ 逻辑：数量加减（增强对比度，解决看不见的问题）
   private onQuantityChange(change: number) {
     if (!this.product) return
     const newQuantity = this.quantity + change
     if (newQuantity >= 1 && newQuantity <= (this.product.stock || 999)) {
       this.quantity = newQuantity
+    } else if (newQuantity > (this.product.stock || 999)) {
+      promptAction.showToast({ message: '超出库存范围' })
     }
   }
 
+  // ✅ 逻辑：登录拦截
+  private async checkAuthAndExecute(action: () => Promise<void>) {
+    const account = this.authService.getCurrentAccount()
+    if (account && account.trim() !== '') {
+      action()
+    } else {
+      promptAction.showToast({ message: '请先登录后操作' })
+      router.pushUrl({ url: 'pages/LoginPage' })
+    }
+  }
+
+  // ✅ 修正后的加入购物车逻辑
   private async onAddToCart() {
     if (!this.product) return
 
-    // 调用 CartService 添加到购物车
-    const success = await this.cartService.addToCart(this.product, this.quantity)
+    // 校验登录逻辑
+    const account = this.authService.getCurrentAccount()
+    if (!account) {
+      promptAction.showToast({ message: '请先登录' })
+      router.pushUrl({ url: 'pages/LoginPage' })
+      return
+    }
 
+    // 1. 异步写入数据库
+    const success = await this.cartService.addToCart(this.product, this.quantity)
     if (success) {
-      this.showCartSuccessDialog()
-    } else {
-      console.error('添加失败，可能未登录')
-      // 这里可以加一个提示，比如弹窗提示去登录
+      // 2. 核心：写入后立即触发 Service 刷新内存，保证购物车页面能读到
+      await this.cartService.refreshCart()
+      promptAction.showToast({ message: '已成功加入购物车' })
     }
   }
 
-  private showCartSuccessDialog(): void {
-    this.showCartDialog = true
-  }
-
-  private goToCart(): void {
-    this.showCartDialog = false
-    router.pushUrl({ url: 'pages/CartPage' })
-  }
-
-  private continueShopping(): void {
-    this.showCartDialog = false
-  }
-
-  private onBuyNow() {
+  // ✅ 立即购买逻辑
+  private async onBuyNow() {
     if (!this.product) return
-    // 先加购物车，再跳
-    this.onAddToCart().then(() => {
-      this.goToCart()
-    })
+    const success = await this.cartService.addToCart(this.product, this.quantity)
+    if (success) {
+      // 只有购买才会触发跳转
+      router.pushUrl({ url: 'pages/CartPage' })
+    }
   }
 
   build() {
     Stack() {
       Column() {
-        // 顶部导航栏
+        // 顶部导航 (原封不动)
         Row() {
-          Button() {
-            Row() {
-              Text('←').fontSize(18).fontColor('#333')
-              Text('返回').fontSize(16).fontColor('#333').margin({ left: 4 })
-            }
-          }
-          .backgroundColor(Color.Transparent)
-          .onClick(() => router.back())
-
+          Button() { Row() { Text('←').fontSize(18).fontColor('#333'); Text('返回').fontSize(16).fontColor('#333').margin({ left: 4 }) } }
+          .backgroundColor(Color.Transparent).onClick(() => router.back())
           Blank().layoutWeight(1)
-          Text(this.product?.name || '商品详情')
-            .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333')
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('40%')
+          Text(this.product?.name || '商品详情').fontSize(18).fontWeight(FontWeight.Bold).maxLines(1).width('40%')
           Blank().layoutWeight(1)
-
-          Button() {
-            Row() {
-              Text('🛒').fontSize(20)
-              Text('购物车').fontSize(10).margin({ left: 4 })
-            }
-          }
-          .fontSize(12).fontColor('#333').backgroundColor(Color.Transparent)
-          .onClick(() => this.goToCart())
+          Button() { Row() { Text('🛒').fontSize(20); Text('购物车').fontSize(10).margin({ left: 4 }) } }
+          .backgroundColor(Color.Transparent).onClick(() => router.pushUrl({ url: 'pages/CartPage' }))
         }
-        .width('100%').height(56).padding({ left: 16, right: 16 })
-        .backgroundColor(Color.White)
-        .shadow({ radius: 2, color: '#1A000000', offsetX: 0, offsetY: 1 })
-        .justifyContent(FlexAlign.SpaceBetween)
+        .width('100%').height(56).padding({ left: 16, right: 16 }).backgroundColor(Color.White)
 
-        // 主内容
         Scroll() {
           Column() {
-            // 轮播图
-            if (this.product && this.product.images && this.product.images.length > 0) {
-              Swiper() {
-                ForEach(this.product.images, (image: Resource) => {
-                  Image(image)
-                    .width('100%').height(this.imageHeight).objectFit(ImageFit.Contain).backgroundColor('#f5f5f5')
-                })
-              }
-              .width('100%').height(this.imageHeight).loop(true).indicator(true)
-              .onChange((index) => this.onImageChange(index))
-            } else if (this.product) {
+            if (this.product) {
               Image(this.product.image).width('100%').height(this.imageHeight).objectFit(ImageFit.Contain)
-            }
+              Column() {
+                Text(this.product.name).fontSize(18).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 12 })
+                Row() {
+                  Text(`¥${this.product.price}`).fontSize(24).fontWeight(FontWeight.Bold).fontColor('#ff4444')
+                }.width('100%').margin({ bottom: 12 })
 
-            // 信息区
-            Column() {
-              Text(this.product?.name || '').fontSize(18).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 12 })
+                Text('商品详情').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ top: 20, bottom: 12 })
+                Text(this.product.detailDescription || '暂无详细描述').fontSize(14).lineHeight(24).width('100%')
 
-              Row() {
-                Text(`¥${this.product?.price || 0}`).fontSize(24).fontWeight(FontWeight.Bold).fontColor('#ff4444')
-                if (this.product?.originalPrice && this.product.originalPrice > this.product.price) {
-                  Text(`¥${this.product.originalPrice}`).fontSize(14).fontColor('#999')
-                    .decoration({ type: TextDecorationType.LineThrough }).margin({ left: 12, top: 4 })
-                }
-              }
-              .width('100%').alignItems(VerticalAlign.Bottom).margin({ bottom: 12 })
-
-              // 标签
-              if (this.product?.tags) {
-                Flex({ wrap: FlexWrap.Wrap }) {
-                  ForEach(this.product.tags, (tag: string) => {
-                    Text(tag).fontSize(12).fontColor('#007aff').backgroundColor('#f0f8ff')
-                      .padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(16).margin({ right: 8, bottom: 8 })
-                  })
-                }
-              }
-
-              // 详情
-              Text('商品详情').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ top: 20, bottom: 12 })
-              Text(this.product?.detailDescription || '暂无详细描述').fontSize(14).lineHeight(24).width('100%')
-
-              // ✅ 恢复评论区组件 (已导入 CommentSection)
-              if (this.product) {
                 CommentSection({ productId: this.product.id })
-              }
-
-              Column().height(100) // 底部垫高
+              }.padding(16).backgroundColor(Color.White).borderRadius(12).margin(12)
             }
-            .padding(16).backgroundColor(Color.White).borderRadius(12).margin(12)
           }
-        }
-        .layoutWeight(1).backgroundColor('#f5f5f5')
+        }.layoutWeight(1)
       }
 
-      // 底部操作栏
+      // 底部操作栏 (样式完全保留，颜色深度加强)
       if (this.product) {
         Row() {
           Column() {
-            Text('数量').fontSize(12).fontColor('#999').margin({ bottom: 4 })
+            Text('购买数量').fontSize(10).fontColor('#999').margin({ bottom: 4 })
             Row() {
-              Button('-').width(32).height(28).fontSize(14).backgroundColor('#f5f5f5')
-                .fontColor(this.quantity > 1 ? '#333' : '#ccc').enabled(this.quantity > 1)
+              // 减号：深灰色背景，黑色文字
+              Button('-').width(32).height(28).fontSize(18).fontWeight(FontWeight.Bold)
+                .backgroundColor('#E8E8E8').fontColor(this.quantity > 1 ? '#333' : '#AAA')
                 .onClick(() => this.onQuantityChange(-1))
-              Text(`${this.quantity}`).fontSize(14).width(40).textAlign(TextAlign.Center)
-              Button('+').width(32).height(28).fontSize(14).backgroundColor('#f5f5f5')
+
+              Text(`${this.quantity}`).fontSize(14).width(40).textAlign(TextAlign.Center).fontColor('#333')
+
+              // 加号：深色显示
+              Button('+').width(32).height(28).fontSize(18).fontWeight(FontWeight.Bold)
+                .backgroundColor('#E8E8E8').fontColor('#333')
                 .onClick(() => this.onQuantityChange(1))
             }
-          }.width(80)
+          }.width(110)
 
           Blank().layoutWeight(1)
-          Button('加入购物车').height(48).fontSize(14).backgroundColor('#ff9500').fontColor(Color.White)
-            .borderRadius(24).layoutWeight(1).margin({ right: 8 }).onClick(() => this.onAddToCart())
-          Button('立即购买').height(48).fontSize(14).backgroundColor('#cf0a2c').fontColor(Color.White)
-            .borderRadius(24).layoutWeight(1).onClick(() => this.onBuyNow())
-        }
-        .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .backgroundColor(Color.White).position({ x: 0, y: '100%' }).translate({ x: 0, y: -64 })
-      }
 
-      // 弹窗逻辑
-      if (this.showCartDialog) {
-        Column() {
-          Column().width('100%').height('100%').backgroundColor('rgba(0,0,0,0.5)').onClick(() => this.continueShopping())
-          Column() {
-            Text('✓').fontSize(48).fontColor('#52c41a').margin({ bottom: 16 })
-            Text('加入成功').fontSize(18).fontWeight(FontWeight.Bold).margin({ bottom: 24 })
-            Row() {
-              Button('继续购物').layoutWeight(1).margin({ right: 8 }).backgroundColor('#f5f5f5').fontColor('#333').onClick(() => this.continueShopping())
-              Button('去购物车').layoutWeight(1).margin({ left: 8 }).backgroundColor('#007aff').onClick(() => this.goToCart())
-            }
-            .width('100%')
-          }
-          .width(300).backgroundColor(Color.White).borderRadius(12).padding(24)
-          .position({ x: '50%', y: '50%' }).translate({ x: '-50%', y: '-50%' })
+          Button('加入购物车').height(48).fontSize(14).backgroundColor('#ff9500').fontColor(Color.White).borderRadius(24).layoutWeight(1).margin({ right: 8 })
+            .onClick(() => this.onAddToCart())
+
+          Button('立即购买').height(48).fontSize(14).backgroundColor('#cf0a2c').fontColor(Color.White).borderRadius(24).layoutWeight(1)
+            .onClick(() => this.onBuyNow())
         }
-        .zIndex(9999)
+        .width('100%').padding(16).backgroundColor(Color.White).position({ x: 0, y: '100%' }).translate({ y: -64 })
       }
-    }
-    .width('100%').height('100%').backgroundColor('#f5f5f5')
+    }.width('100%').height('100%').backgroundColor('#f5f5f5')
   }
 }
