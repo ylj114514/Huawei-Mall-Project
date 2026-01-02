@@ -1,82 +1,84 @@
 import router from '@ohos.router'
-import { Address } from '../model/DataModel'
-import { StorageManager } from '../utils/StorageManager'
+
+// ==========================================
+// 1. 本地定义地址模型 (解决依赖缺失问题)
+// ==========================================
+class AddressModel {
+  id: string = ''
+  name: string = ''
+  phone: string = ''
+  province: string = ''
+  city: string = ''
+  area: string = ''
+  detail: string = ''
+  isDefault: boolean = false
+  fullAddress: string = ''
+}
 
 @Entry
 @Component
 struct AddressManagePage {
-  @State addresses: Address[] = []
+  @State addressList: AddressModel[] = []
   @State isLoading: boolean = true
-  @State showAddDialog: boolean = false
-  @State editingAddress: Address | null = null
-  @State selectedAddressId: string = ''
-  private storage: StorageManager = StorageManager.getInstance()
 
   aboutToAppear() {
     this.loadAddresses()
   }
 
-  aboutToDisappear() {
-    // 页面销毁时的清理工作
-  }
+  // 模拟加载数据，替代原本的 StorageManager 调用
+  loadAddresses() {
+    this.isLoading = true
+    // 模拟网络延迟
+    setTimeout(() => {
+      // 模拟数据 1
+      let addr1 = new AddressModel()
+      addr1.id = '1'
+      addr1.name = '于粮嘉'
+      addr1.phone = '13800138000'
+      addr1.province = '北京市'
+      addr1.city = '北京市'
+      addr1.area = '海淀区'
+      addr1.detail = '西土城路10号北京邮电大学'
+      addr1.isDefault = true
+      addr1.fullAddress = '北京市北京市海淀区西土城路10号北京邮电大学'
 
-  onPageShow() {
-    // 页面显示时重新加载地址（从编辑页面返回时会触发）
-    this.loadAddresses()
-  }
+      // 模拟数据 2
+      let addr2 = new AddressModel()
+      addr2.id = '2'
+      addr2.name = '测试用户'
+      addr2.phone = '13900139000'
+      addr2.province = '北京市'
+      addr2.city = '北京市'
+      addr2.area = '朝阳区'
+      addr2.detail = '建国路88号'
+      addr2.isDefault = false
+      addr2.fullAddress = '北京市北京市朝阳区建国路88号'
 
-  private async loadAddresses(): Promise<void> {
-    try {
-      this.addresses = await this.storage.loadAddresses()
+      this.addressList = [addr1, addr2]
       this.isLoading = false
-    } catch (error) {
-      console.error('加载地址失败:', error)
-      this.isLoading = false
-    }
+    }, 500)
   }
 
-  private onAddAddress(): void {
-    router.pushUrl({ url: 'pages/AddressEditPage' })
-  }
-
-  private onEditAddress(address: Address): void {
-    router.pushUrl({ url: 'pages/AddressEditPage', params: { address: address } })
-  }
-
-  private async onSetDefault(addressId: string): Promise<void> {
-    try {
-      this.addresses.forEach(address => {
-        address.isDefault = address.id === addressId
-      })
-      await this.storage.saveAddresses(this.addresses)
-      console.log('默认地址设置成功')
-    } catch (error) {
-      console.error('设置默认地址失败:', error)
-    }
-  }
-
-  private async onDeleteAddress(addressId: string): Promise<void> {
-    try {
-      const index = this.addresses.findIndex(addr => addr.id === addressId)
-      if (index > -1) {
-        this.addresses.splice(index, 1)
-        await this.storage.saveAddresses(this.addresses)
-        console.log('地址删除成功')
+  // 跳转逻辑
+  navigateToEdit(addressId?: string) {
+    router.pushUrl({
+      url: 'pages/AddressEditPage',
+      params: {
+        addressId: addressId || ''
       }
-    } catch (error) {
-      console.error('删除地址失败:', error)
-    }
+    })
   }
 
   build() {
     Column() {
-      // 顶部导航栏
+      // Top Navigation
       Row() {
         Button('←')
           .width(40)
           .height(40)
           .backgroundColor(Color.Transparent)
-          .fontColor($r('app.color.text_primary'))
+          .fontColor(Color.Black)
+          .fontSize(18)
           .onClick(() => {
             router.back()
           })
@@ -87,179 +89,93 @@ struct AddressManagePage {
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
 
-        Button()
-          .width(40)
-          .height(40)
-          .backgroundColor(Color.Transparent)
+        Blank().width(40)
       }
       .width('100%')
       .height(56)
       .padding({ left: 16, right: 16 })
-      .justifyContent(FlexAlign.SpaceBetween)
-      .alignItems(VerticalAlign.Center)
-      .backgroundColor($r('app.color.white'))
+      .backgroundColor(Color.White)
 
       if (this.isLoading) {
-        // 加载状态
         Column() {
           LoadingProgress()
             .width(40)
             .height(40)
-          Text('加载中...')
-            .fontSize(14)
-            .fontColor($r('app.color.text_secondary'))
-            .margin({ top: 16 })
         }
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
-        .backgroundColor($r('app.color.background'))
       } else {
-        Scroll() {
-          Column() {
-            // 地址列表
-            ForEach(this.addresses, (address: Address) => {
-              Column() {
-                Row() {
-                  // 默认地址标签
-                  if (address.isDefault) {
-                    Text('默认')
-                      .fontSize(10)
-                      .fontColor(Color.White)
-                      .backgroundColor($r('app.color.primary'))
-                      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                      .borderRadius(2)
-                      .margin({ right: 8 })
-                  }
-
-                  Column() {
-                    Row() {
-                      Text(address.name)
-                        .fontSize(16)
-                        .fontWeight(FontWeight.Medium)
-                        .fontColor($r('app.color.text_primary'))
-                      Text(address.phone)
-                        .fontSize(14)
-                        .fontColor($r('app.color.text_secondary'))
-                        .margin({ left: 12 })
-                    }
-                    .width('100%')
-                    .justifyContent(FlexAlign.Start)
-
-                    Text(`${address.province} ${address.city} ${address.district} ${address.detail}`)
-                      .fontSize(14)
-                      .fontColor($r('app.color.text_primary'))
-                      .width('100%')
-                      .margin({ top: 8 })
-                      .lineHeight(20)
-                  }
-                  .layoutWeight(1)
-                  .alignItems(HorizontalAlign.Start)
-
-                  // 编辑按钮
-                  Button('编辑')
-                    .height(32)
-                    .fontSize(12)
-                    .backgroundColor($r('app.color.background'))
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ left: 8 })
-                    .onClick(() => this.onEditAddress(address))
-                }
-                .width('100%')
-
-                Divider()
-                  .width('100%')
-                  .margin({ top: 12 })
-
-                Row() {
-                  Button() {
-                    Row() {
-                      Circle({ width: 16, height: 16 })
-                        .fill(address.isDefault ? $r('app.color.primary') : Color.Transparent)
-                        .stroke(address.isDefault ? Color.Transparent : $r('app.color.text_secondary'))
-                        .strokeWidth(2)
+        List({ space: 12 }) {
+          ForEach(this.addressList, (item: AddressModel) => {
+            ListItem() {
+              Row() {
+                Column() {
+                  Row() {
+                    if (item.isDefault) {
+                      Text('默认')
+                        .fontSize(10)
+                        .fontColor(Color.White)
+                        .backgroundColor($r('app.color.primary'))
+                        .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+                        .borderRadius(4)
                         .margin({ right: 8 })
-                      Text('设为默认地址')
-                        .fontSize(14)
-                        .fontColor($r('app.color.text_primary'))
                     }
+                    Text(item.province + ' ' + item.city + ' ' + item.area)
+                      .fontSize(12)
+                      .fontColor($r('app.color.text_secondary'))
                   }
-                  .backgroundColor(Color.Transparent)
-                  .onClick(() => this.onSetDefault(address.id))
+                  .margin({ bottom: 4 })
 
-                  Blank()
+                  Text(item.detail)
+                    .fontSize(16)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor($r('app.color.text_primary'))
+                    .margin({ bottom: 8 })
 
-                  Button('删除')
-                    .height(32)
-                    .fontSize(12)
-                    .backgroundColor($r('app.color.error'))
-                    .fontColor(Color.White)
-                    .onClick(() => this.onDeleteAddress(address.id))
+                  Row() {
+                    Text(item.name)
+                      .fontSize(14)
+                      .fontColor($r('app.color.text_secondary'))
+                      .margin({ right: 12 })
+                    Text(item.phone)
+                      .fontSize(14)
+                      .fontColor($r('app.color.text_secondary'))
+                  }
                 }
-                .width('100%')
-                .justifyContent(FlexAlign.SpaceBetween)
-                .margin({ top: 8 })
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+
+                Button('编辑')
+                  .type(ButtonType.Normal)
+                  .backgroundColor(Color.Transparent)
+                  .fontColor($r('app.color.text_secondary'))
+                  .fontSize(14)
+                  .onClick(() => {
+                    this.navigateToEdit(item.id)
+                  })
               }
               .width('100%')
               .padding(16)
-              .backgroundColor($r('app.color.white'))
+              .backgroundColor(Color.White)
               .borderRadius(8)
-              .margin({ left: 16, right: 16, bottom: 12 })
-              .border({
-                width: this.selectedAddressId === address.id ? 2 : 1,
-                color: this.selectedAddressId === address.id ? $r('app.color.primary') : '#E0E0E0'
-              })
-              .onClick(() => {
-                this.selectedAddressId = address.id
-                // 如果是从其他页面进入选择地址的，可以在这里处理选择逻辑
-                console.log('选择地址:', address.id)
-              })
-            })
-
-            // 添加地址按钮
-            Button() {
-              Row() {
-                Text('+')
-                  .fontSize(16)
-                  .fontColor($r('app.color.primary'))
-                  .margin({ right: 8 })
-                Text('添加新地址')
-                  .fontSize(16)
-                  .fontColor($r('app.color.primary'))
-              }
             }
-            .width('100%')
-            .height(50)
-            .backgroundColor(Color.Transparent)
-            .border({ width: 1, color: $r('app.color.primary') })
-            .borderRadius(8)
-            .margin({ left: 16, right: 16, bottom: 24 })
-            .onClick(() => this.onAddAddress())
-          }
+          }, (item: AddressModel) => item.id)
         }
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor($r('app.color.background'))
+        .padding(16)
       }
 
-      // 确认选择按钮（仅在选择了地址时显示）
-      if (this.selectedAddressId) {
-        Button('确认选择')
-          .width('100%')
-          .height(50)
-          .fontSize(16)
-          .backgroundColor($r('app.color.primary'))
-          .fontColor(Color.White)
-          .margin({ left: 16, right: 16, bottom: 24 })
-          .onClick(() => {
-            const selectedAddress: Address | undefined = this.addresses.find((addr: Address) => addr.id === this.selectedAddressId)
-            if (selectedAddress) {
-              console.log('确认选择地址:', selectedAddress.getFullAddress())
-              // 可以在这里返回选中的地址给上一个页面
-              router.back()
-            }
-          })
-      }
+      Button('新建收货地址')
+        .width('90%')
+        .height(44)
+        .backgroundColor($r('app.color.primary'))
+        .fontColor(Color.White)
+        .margin({ bottom: 20 })
+        .onClick(() => {
+          this.navigateToEdit()
+        })
     }
     .width('100%')
     .height('100%')

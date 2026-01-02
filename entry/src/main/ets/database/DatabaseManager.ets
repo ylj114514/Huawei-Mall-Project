@@ -5,6 +5,7 @@ import { User, Comment, Address, Order } from '../model/DataModel'
 import { ProductModel } from '../model/ProductModel'
 import { BusinessError } from '../model/BusinessError'
 
+// 使用 cloud.CloudDBZone 等
 type UserRole = 'admin' | 'user'
 
 export interface ProductRow {
@@ -271,7 +272,7 @@ export class DatabaseManager {
       user.username,
       user.email || '',
       user.phone || '',
-      user.avatar || '',
+      user.avatar ? user.avatar.toString() : '',
       user.realName || '',
       user.gender || 'unknown',
       user.birthday || '',
@@ -781,6 +782,47 @@ export class DatabaseManager {
       rs?.close()
     }
   }
+
+  // ... 在 getCommentsByProduct 方法后面加入 ...
+
+  // ✅ 新增：查询指定用户的所有评论
+  public async getCommentsByUser(userId: string): Promise<Comment[]> {
+    const db = this.ensureStore()
+    // 假设 comments 表里 user_id 存的是账号
+    const sql = 'SELECT * FROM comments WHERE user_id = ? ORDER BY createTime DESC'
+    let rs: relationalStore.ResultSet | null = null
+    const out: Comment[] = []
+
+    try {
+      rs = await db.querySql(sql, [userId])
+      while (rs.goToNextRow()) {
+        // id, product_id, user_id, username, avatar, rating, content, images_json, likes, isLiked, replyTo, isTopComment, createTime
+        const c = new Comment(
+          rs.getString(1), // product_id
+          rs.getString(2), // user_id
+          rs.getString(3), // username
+          Number(rs.getLong(5)), // rating
+          rs.getString(6)  // content
+        )
+        c.id = rs.getString(0)
+        c.avatar = rs.getString(4)
+        const imagesStr = rs.getString(7)
+        c.images = imagesStr ? JSON.parse(imagesStr) : []
+        c.likes = rs.getLong(8)
+        c.isLiked = rs.getLong(9) === 1
+        c.createTime = rs.getLong(12)
+        out.push(c)
+      }
+    } catch (e) {
+      console.error('[DB] getCommentsByUser failed:', e)
+    } finally {
+      rs?.close()
+    }
+    return out
+  }
+
+  // ... 后面是 deleteReview 等方法 ...
+
 
   public async likeComment(commentId: string): Promise<boolean> {
     const db: relationalStore.RdbStore = this.ensureStore()
