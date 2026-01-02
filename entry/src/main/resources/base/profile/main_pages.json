@@ -11,6 +11,7 @@
     "pages/MyReviewsPage",
     "pages/AddressManagePage",
     "pages/AddressEditPage",
-    "pages/SplashScreen"
+    "pages/SplashScreen",
+    "pages/EditProfilePage"
   ]
 }

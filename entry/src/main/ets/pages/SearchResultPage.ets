@@ -1,8 +1,9 @@
 import router from '@ohos.router'
 import { ProductModel, MockData } from '../model/ProductModel'
-import { SearchBarEnhanced } from '../components/SearchBarEnhanced'
-import { ProductCardEnhanced } from '../components/ProductCardEnhanced'
+// import { SearchBar } from '../components/SearchBar' // 移除可能导致报错的自定义组件
+import { ProductCard } from '../components/ProductCard'
 import { CartService } from '../services/CartService'
+import { CartItem } from '../model/DataModel'
 
 interface RouteParams {
   query?: string
@@ -21,8 +22,8 @@ struct SearchResultPage {
   @State resultCount: number = 0
   @State searchHistory: string[] = []
   @State hotSearches: string[] = ['华为Mate 60', 'iPhone 15', 'MacBook Pro', 'AirPods Pro', '小米14', 'OPPO Find']
-  private cartService: CartService = CartService.getInstance()
 
+  private cartService: CartService = CartService.getInstance()
   private sortOptions = ['综合', '销量', '价格↑', '价格↓', '好评']
   private priceRanges = ['全部', '0-1000', '1000-3000', '3000-5000', '5000-10000', '10000+']
 
@@ -52,9 +53,9 @@ struct SearchResultPage {
     setTimeout(() => {
       const query = this.searchText.toLowerCase()
       this.filteredProducts = this.products.filter(product =>
-        product.name.toLowerCase().includes(query) ||
-        product.description.toLowerCase().includes(query) ||
-        product.tags.some(tag => tag.toLowerCase().includes(query))
+      product.name.toLowerCase().includes(query) ||
+      product.description.toLowerCase().includes(query) ||
+      product.tags.some(tag => tag.toLowerCase().includes(query))
       )
 
       this.applySortAndFilter()
@@ -91,7 +92,7 @@ struct SearchResultPage {
         filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0))
         break
       default:
-        // 综合排序 - 保持默认
+      // 综合排序 - 保持默认
         break
     }
 
@@ -116,21 +117,24 @@ struct SearchResultPage {
 
   private onProductClick(product: ProductModel) {
     router.pushUrl({
-      url: 'pages/ProductDetailPageEnhanced',
+      url: 'pages/ProductDetailPage',
       params: {
-        productId: product.id
+        product: product
       }
     })
   }
 
   private async onQuickAddToCart(product: ProductModel) {
     try {
-      if (this.cartService.isProductInCart(product.id)) {
-        console.log('商品已在购物车中')
+      const cartItems = this.cartService.getCartItems()
+      const exists = cartItems.some((item: CartItem) => item.product.id === product.id)
+
+      if (exists) {
+        console.info('商品已在购物车中')
       } else {
         const success = await this.cartService.addToCart(product, 1)
         if (success) {
-          console.log('快速加购成功')
+          console.info('快速加购成功')
         }
       }
     } catch (error) {
@@ -156,12 +160,16 @@ struct SearchResultPage {
         .backgroundColor(Color.Transparent)
         .onClick(() => this.goBack())
 
-        SearchBarEnhanced({
-          searchText: $searchText,
-          onSearch: this.onSearch.bind(this)
-        })
+        // ✅ 修正：使用系统 Search 组件，保证不出错
+        Search({ value: this.searchText, placeholder: '搜索商品' })
+          .searchButton('搜索')
+          .onSubmit((value) => this.onSearch(value))
+          .onChange((value) => {
+            this.searchText = value
+          })
           .layoutWeight(1)
           .margin({ left: 12, right: 12 })
+          .backgroundColor('#F5F5F5')
       }
       .width('100%')
       .height(60)
@@ -169,7 +177,7 @@ struct SearchResultPage {
       .backgroundColor($r('app.color.white'))
       .shadow({
         radius: 2,
-        color: $r('app.color.shadow_light'),
+        color: '#1A000000',
         offsetX: 0,
         offsetY: 1
       })
@@ -212,7 +220,7 @@ struct SearchResultPage {
             }
           }
           .height(36)
-          .backgroundColor(this.showFilters ? $r('app.color.primary_light') : $r('app.color.background_gray'))
+          .backgroundColor(this.showFilters ? '#E6F2FF' : '#F5F5F5')
           .borderRadius(18)
           .padding({ left: 16, right: 16 })
           .onClick(() => {
@@ -240,7 +248,7 @@ struct SearchResultPage {
                     .height(32)
                     .fontSize(13)
                     .fontColor(this.selectedPriceRange === range ? $r('app.color.primary') : $r('app.color.text_secondary'))
-                    .backgroundColor(this.selectedPriceRange === range ? $r('app.color.primary_light') : $r('app.color.background_gray'))
+                    .backgroundColor(this.selectedPriceRange === range ? '#E6F2FF' : '#F5F5F5')
                     .borderRadius(16)
                     .padding({ left: 16, right: 16 })
                     .margin({ right: 8, bottom: 8 })
@@ -254,10 +262,6 @@ struct SearchResultPage {
             .backgroundColor($r('app.color.white'))
             .borderRadius(12)
             .margin({ bottom: 8 })
-            .animation({
-              duration: 300,
-              curve: Curve.EaseInOut
-            })
           }
           .width('100%')
           .padding({ left: 16, right: 16 })
@@ -271,7 +275,7 @@ struct SearchResultPage {
                 .fontSize(14)
                 .fontColor(this.selectedSort === sort ? Color.White : $r('app.color.text_primary'))
                 .backgroundColor(this.selectedSort === sort ? $r('app.color.primary') : $r('app.color.white'))
-                .border({ width: 1, color: this.selectedSort === sort ? Color.Transparent : $r('app.color.border_light') })
+                .border({ width: 1, color: this.selectedSort === sort ? Color.Transparent : '#EEEEEE' })
                 .borderRadius(18)
                 .padding({ left: 20, right: 20, top: 10, bottom: 10 })
                 .onClick(() => this.onSortChange(sort))
@@ -284,11 +288,10 @@ struct SearchResultPage {
         .height(50)
         .scrollBar(BarState.Off)
         .scrollable(ScrollDirection.Horizontal)
-        .edgeEffect(EdgeEffect.Spring)
         .backgroundColor($r('app.color.white'))
       }
       .width('100%')
-      .backgroundColor($r('app.color.background_gray'))
+      .backgroundColor('#F5F5F5')
 
       // 商品列表
       if (this.isLoading) {
@@ -309,16 +312,11 @@ struct SearchResultPage {
         Grid() {
           ForEach(this.filteredProducts, (product: ProductModel) => {
             GridItem() {
-              ProductCardEnhanced({
-                product: product,
-                onProductClick: this.onProductClick.bind(this),
-                onQuickAddToCart: this.onQuickAddToCart.bind(this)
+              ProductCard({
+                product: product
               })
+                .onClick(() => this.onProductClick(product))
             }
-            .animation({
-              duration: 300,
-              curve: Curve.EaseInOut
-            })
           }, (product: ProductModel) => product.id)
         }
         .columnsTemplate('1fr 1fr')
@@ -332,7 +330,7 @@ struct SearchResultPage {
         Column() {
           Text('🔍')
             .fontSize(80)
-            .fontColor($r('app.color.text_tertiary'))
+            .fontColor('#CCCCCC')
             .margin({ bottom: 16 })
 
           Text('没有找到相关商品')
@@ -342,7 +340,7 @@ struct SearchResultPage {
 
           Text('试试其他关键词或查看热门推荐')
             .fontSize(14)
-            .fontColor($r('app.color.text_tertiary'))
+            .fontColor('#CCCCCC')
             .margin({ bottom: 24 })
 
           // 热门搜索
@@ -360,7 +358,7 @@ struct SearchResultPage {
                   .height(32)
                   .fontSize(13)
                   .fontColor($r('app.color.text_secondary'))
-                  .backgroundColor($r('app.color.background_gray'))
+                  .backgroundColor('#F5F5F5')
                   .borderRadius(16)
                   .padding({ left: 16, right: 16 })
                   .margin({ right: 8, bottom: 8 })

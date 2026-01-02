@@ -6,20 +6,22 @@ import { DatabaseManager } from '../database/DatabaseManager';
 import { AuthService } from '../services/AuthService';
 import { CartService } from '../services/CartService';
 
+// ❌ 绝对不要 import @hw-agconnect 相关的包
+
 export default class EntryAbility extends UIAbility {
   onCreate(want: Object, launchParam: Object): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onCreate');
+    // ✅ 纯本地模式：不需要 initialize(this.context)
   }
 
   onDestroy(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
-  // ✅ 修复：去掉 async，保持标准签名
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    // 调用内部异步初始化
+    // 初始化本地服务
     this.initServices();
 
     windowStage.loadContent('pages/SplashScreen', (err) => {
@@ -31,23 +33,22 @@ export default class EntryAbility extends UIAbility {
     });
   }
 
-  // ✅ 封装异步初始化逻辑
   private async initServices(): Promise<void> {
     try {
       const context = this.context as common.UIAbilityContext;
 
-      // 1. 初始化数据库
+      // 1. 初始化本地数据库
       await DatabaseManager.getInstance().init(context);
-      // 2. 播种数据
+      // 2. 填充测试商品数据
       await DatabaseManager.getInstance().seedProducts();
-      // 3. 初始化用户服务 (现在 AuthService 有 init 方法了)
+      // 3. 初始化认证状态
       await AuthService.getInstance().init();
       // 4. 初始化购物车
       await CartService.getInstance().init();
 
-      console.info('All services initialized successfully');
+      hilog.info(0x0000, 'testTag', '所有本地服务初始化成功');
     } catch (error) {
-      console.error('Service initialization failed:', JSON.stringify(error));
+      hilog.error(0x0000, 'testTag', '服务初始化失败: %{public}s', JSON.stringify(error));
     }
   }
 

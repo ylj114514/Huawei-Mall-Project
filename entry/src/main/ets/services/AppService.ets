@@ -3,6 +3,7 @@ import { CartService } from './CartService'
 
 /**
  * AppService: 全局应用服务协调者
+ * 作用：统一初始化所有服务，提供全局退出登录等功能
  */
 export class AppService {
   private static instance: AppService

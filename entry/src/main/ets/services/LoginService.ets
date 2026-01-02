@@ -1,5 +1,5 @@
 import { DatabaseManager } from '../database/DatabaseManager'
-import { SessionManager } from '../utils/SessionManager'
+import { SessionManager } from '../database/DatabaseManager'
 import { User } from '../model/DataModel'
 
 export class LoginService {

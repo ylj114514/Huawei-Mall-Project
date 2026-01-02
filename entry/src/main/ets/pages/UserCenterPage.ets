@@ -1,52 +1,51 @@
-import router from '@ohos.router'
-import { User } from '../model/DataModel'
-// import { StorageManager } from '../utils/StorageManager' // ❌ 已移除，不再引用
-import { AuthService } from '../services/AuthService' // ✅ 使用新服务
-import { CartService } from '../services/CartService'
-import { AppService } from '../services/AppService'
+import router from '@ohos.router';
+import { User } from '../model/DataModel';
+// ✅ 修复引用：使用 AuthService 替代已移除的 StorageManager
+import { AuthService } from '../services/AuthService';
+import { CartService } from '../services/CartService';
+import { AppService } from '../services/AppService';
 
 @Entry
 @Component
-struct UserCenterPageSimple {
-  @State user: User | null = null
-  @State isLoading: boolean = true
-  @State cartCount: number = 0
-  @State isAdmin: boolean = false // ✅ 新增管理员状态
+struct UserCenterPage {
+  @State user: User | null = null;
+  @State isLoading: boolean = true;
+  @State cartCount: number = 0;
+  @State isAdmin: boolean = false; // ✅ 适配管理员逻辑
 
   // 获取服务实例
-  private appService: AppService = AppService.getInstance()
-  private authService: AuthService = AuthService.getInstance() // ✅ 替换 StorageManager
-  private cartService: CartService = CartService.getInstance()
+  private appService: AppService = AppService.getInstance();
+  private authService: AuthService = AuthService.getInstance(); // ✅ 替换 StorageManager
+  private cartService: CartService = CartService.getInstance();
 
   aboutToAppear() {
-    this.refreshData()
+    this.refreshData();
   }
 
   // 每次页面显示时刷新，确保数据最新
   onPageShow() {
-    this.refreshData()
+    this.refreshData();
   }
 
   /**
-   * 加载用户数据 (修复报错)
+   * 加载用户数据
    */
   private async loadUserData(): Promise<void> {
     try {
-      // ✅ 改用 AuthService 获取当前用户
-      this.user = await this.authService.getCurrentUser()
+      // ✅ 适配逻辑：使用 AuthService 获取当前用户
+      this.user = await this.authService.getCurrentUser();
 
       if (this.user) {
-        // ✅ 检查管理员权限
-        this.isAdmin = await this.authService.isAdmin()
-        this.isLoading = false
+        // ✅ 适配逻辑：检查管理员权限
+        this.isAdmin = await this.authService.isAdmin();
+        this.isLoading = false;
       } else {
-        // 没有用户数据，跳转到登录页
-        this.isLoading = false
-        // router.replaceUrl({ url: 'pages/LoginPage' }) // 暂时注释，允许查看未登录态UI
+        this.isLoading = false;
+        // 未登录时不强制跳转，允许显示未登录 UI
       }
     } catch (error) {
-      console.error('加载用户数据失败:', error)
-      this.isLoading = false
+      console.error('加载用户数据失败:', error);
+      this.isLoading = false;
     }
   }
 
@@ -55,51 +54,48 @@ struct UserCenterPageSimple {
    */
   private async loadStatistics(): Promise<void> {
     try {
-      // ✅ 确保购物车数据是最新的
-      await this.cartService.refreshCart()
-      this.cartCount = this.cartService.getTotalCount()
+      // ✅ 适配逻辑：刷新购物车
+      await this.cartService.refreshCart();
+      this.cartCount = this.cartService.getTotalCount();
     } catch (error) {
-      console.error('加载统计信息失败:', error)
-      this.cartCount = 0
+      console.error('加载统计信息失败:', error);
+      this.cartCount = 0;
     }
   }
 
   /**
    * 辅助方法：获取会员等级文本
-   * (在页面内处理，防止 User 对象丢失方法导致崩溃)
    */
   private getLevelText(level: string | undefined): string {
     switch (level) {
-      case 'bronze': return '青铜会员'
-      case 'silver': return '白银会员'
-      case 'gold': return '黄金会员'
-      case 'platinum': return '铂金会员' // 对应你的DataModel
-      default: return '普通会员'
+      case 'bronze': return '青铜会员';
+      case 'silver': return '白银会员';
+      case 'gold': return '黄金会员';
+      case 'platinum': return '铂金会员';
+      default: return '普通会员';
     }
   }
 
   private navigateToPage(page: string): void {
     try {
-      console.log('导航到页面:', page)
-      router.pushUrl({ url: page })
+      router.pushUrl({ url: page });
     } catch (error) {
-      console.error('页面导航失败:', error)
+      console.error('页面导航失败:', error);
     }
   }
 
-  /**
-   * 刷新数据
-   */
   private async refreshData(): Promise<void> {
     await Promise.all([
       this.loadUserData(),
       this.loadStatistics()
-    ])
+    ]);
   }
 
   build() {
     Column() {
-      // 顶部导航栏 (完全保留)
+      // ----------------------------------------------------------------
+      // 1. 顶部导航栏 (保持 GitHub 原版 UI)
+      // ----------------------------------------------------------------
       Row() {
         Button('←')
           .width(40)
@@ -108,7 +104,7 @@ struct UserCenterPageSimple {
           .fontColor(Color.White)
           .fontSize(18)
           .onClick(() => {
-            router.replaceUrl({ url: 'pages/Index' })
+            router.replaceUrl({ url: 'pages/Index' });
           })
 
         Text('个人中心')
@@ -143,23 +139,34 @@ struct UserCenterPageSimple {
         .justifyContent(FlexAlign.Center)
         .backgroundColor($r('app.color.background'))
       } else if (this.user) {
-        // 已登录状态 (UI 布局完全保留)
+        // ----------------------------------------------------------------
+        // 2. 已登录状态 (保持 GitHub 原版 UI)
+        // ----------------------------------------------------------------
         Scroll() {
           Column() {
-            // 用户信息卡片
+            // (A) 用户信息卡片
             Row() {
-              Text('👤')
-                .fontSize(40)
-                .margin({ right: 16 })
+              // 头像区域
+              if (this.user.avatar) {
+                Image(this.user.avatar)
+                  .width(60)
+                  .height(60)
+                  .borderRadius(30)
+                  .margin({ right: 16 })
+              } else {
+                Text('👤')
+                  .fontSize(40)
+                  .margin({ right: 16 })
+              }
 
               Column() {
+                // ✅ 适配字段：username
                 Text(this.user.username)
                   .fontSize(18)
                   .fontWeight(FontWeight.Bold)
                   .fontColor($r('app.color.text_primary'))
                   .width('100%')
 
-                // ✅ 修复：使用本地方法获取等级文本，防止报错
                 Text(`${this.getLevelText(this.user.level)} | 积分: ${this.user.points || 0}`)
                   .fontSize(14)
                   .fontColor($r('app.color.text_secondary'))
@@ -168,8 +175,9 @@ struct UserCenterPageSimple {
               }
               .layoutWeight(1)
 
-              Text('>')
-                .fontSize(16)
+              // ✅ 修正：补全“编辑资料”四个字
+              Text('编辑资料 >')
+                .fontSize(14)
                 .fontColor($r('app.color.text_secondary'))
             }
             .width('100%')
@@ -177,9 +185,12 @@ struct UserCenterPageSimple {
             .backgroundColor($r('app.color.white'))
             .borderRadius(12)
             .margin({ left: 16, right: 16, top: 16 })
-            .onClick(() => {})
+            .onClick(() => {
+              // ✅ 逻辑修正：跳转到编辑资料页面
+              this.navigateToPage('pages/EditProfilePage');
+            })
 
-            // 统计信息
+            // (B) 统计信息栏 (购物车/订单/评价)
             Row() {
               Column() {
                 Text('🛒')
@@ -196,13 +207,13 @@ struct UserCenterPageSimple {
               }
               .width('33%')
               .justifyContent(FlexAlign.Center)
-              .onClick(() => this.navigateToPage('pages/CartPage')) // ✅ 修正：跳转到 CartPage
+              .onClick(() => this.navigateToPage('pages/CartPage'))
 
               Column() {
                 Text('📦')
                   .fontSize(24)
                   .margin({ bottom: 4 })
-                Text('0')
+                Text('0') // 订单数暂未对接
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor($r('app.color.text_primary'))
@@ -218,7 +229,7 @@ struct UserCenterPageSimple {
                 Text('💬')
                   .fontSize(24)
                   .margin({ bottom: 4 })
-                Text('0')
+                Text('0') // 评价数暂未对接
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor($r('app.color.text_primary'))
@@ -236,7 +247,7 @@ struct UserCenterPageSimple {
             .borderRadius(12)
             .margin({ left: 16, right: 16, top: 12 })
 
-            // 功能菜单
+            // (C) 功能菜单
             Column() {
               Text('我的服务')
                 .fontSize(16)
@@ -245,6 +256,7 @@ struct UserCenterPageSimple {
                 .width('100%')
                 .margin({ bottom: 12 })
 
+              // 我的评价
               Row() {
                 Text('💬')
                   .fontSize(20)
@@ -271,13 +283,14 @@ struct UserCenterPageSimple {
               .padding(16)
               .justifyContent(FlexAlign.Start)
               .onClick(() => {
-                this.navigateToPage('pages/MyReviewsPage')
+                this.navigateToPage('pages/MyReviewsPage');
               })
 
               Divider()
                 .width('100%')
                 .margin({ left: 16, right: 16 })
 
+              // 收货地址
               Row() {
                 Text('📍')
                   .fontSize(20)
@@ -305,7 +318,7 @@ struct UserCenterPageSimple {
               .justifyContent(FlexAlign.Start)
               .onClick(() => this.navigateToPage('pages/AddressManagePage'))
 
-              // ✅ 管理员后台入口 (保留逻辑，仅管理员可见)
+              // 管理员后台 (仅管理员显示)
               if (this.isAdmin) {
                 Divider()
                   .width('100%')
@@ -344,7 +357,7 @@ struct UserCenterPageSimple {
             .borderRadius(12)
             .margin({ left: 16, right: 16, bottom: 12 })
 
-            // 退出登录
+            // (D) 退出登录
             Column() {
               Row() {
                 Text('🚪')
@@ -368,19 +381,17 @@ struct UserCenterPageSimple {
               .justifyContent(FlexAlign.Start)
               .onClick(async () => {
                 try {
-                  // ✅ 修复：使用 AuthService 退出
-                  this.authService.logout()
-                  this.user = null
-                  console.log('用户退出登录')
-                  router.replaceUrl({ url: 'pages/LoginPage' })
+                  // ✅ 适配逻辑：调用 AuthService 退出
+                  await this.authService.logout();
+                  this.user = null;
+                  router.replaceUrl({ url: 'pages/LoginPage' });
                 } catch (error) {
-                  console.error('退出登录失败:', error)
+                  console.error('退出登录失败:', error);
                 }
               })
             }
             .width('100%')
 
-            // 底部占位
             Column()
               .width('100%')
               .height(20)
@@ -391,9 +402,10 @@ struct UserCenterPageSimple {
         .layoutWeight(1)
         .backgroundColor($r('app.color.background'))
       } else {
-        // 未登录状态 (UI 布局完全保留)
+        // ----------------------------------------------------------------
+        // 3. 未登录状态 (保持 GitHub 原版 UI)
+        // ----------------------------------------------------------------
         Column() {
-          // 用户头像和登录按钮
           Column() {
             Text('👤')
               .fontSize(80)
@@ -411,14 +423,14 @@ struct UserCenterPageSimple {
               .fontColor(Color.White)
               .borderRadius(22)
               .onClick(() => {
-                router.pushUrl({ url: 'pages/LoginPage' })
+                router.pushUrl({ url: 'pages/LoginPage' });
               })
           }
           .width('100%')
           .padding(48)
           .justifyContent(FlexAlign.Center)
 
-          // 快速访问
+          // 快速访问栏 (未登录态)
           Row() {
             Column() {
               Text('🏠')
@@ -431,7 +443,7 @@ struct UserCenterPageSimple {
             .width('25%')
             .justifyContent(FlexAlign.Center)
             .onClick(() => {
-              router.replaceUrl({ url: 'pages/Index' })
+              router.replaceUrl({ url: 'pages/Index' });
             })
 
             Column() {
@@ -444,8 +456,7 @@ struct UserCenterPageSimple {
             }
             .width('25%')
             .justifyContent(FlexAlign.Center)
-            .onClick(() => this.navigateToPage('pages/CartPage')) // ✅ 修正：跳转到 CartPage
-
+            .onClick(() => this.navigateToPage('pages/CartPage'))
 
             Column() {
               Text('📦')

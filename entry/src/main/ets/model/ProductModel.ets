@@ -1,3 +1,4 @@
+// 1. 定义数据模型
 export class ProductModel {
   id: string
   name: string
@@ -5,9 +6,11 @@ export class ProductModel {
   originalPrice: number
   description: string
   detailDescription: string
-  images: Resource[]
-  image: Resource // 主图，用于购物车等场景
-  spec: string // 商品规格
+  // ✅【关键修改】这里必须是 ResourceStr[]，才能同时支持 "上传的路径(string)" 和 "Mock图片(Resource)"
+  images: ResourceStr[]
+  // ✅【关键修改】同上，主图也改为 ResourceStr
+  image: ResourceStr
+  spec: string
   category: string
   tags: string[]
   rating: number
@@ -16,11 +19,11 @@ export class ProductModel {
   sales: number
   isNew: boolean
   status: string
-  width: number = 0 // 用于瀑布流布局计算
+  width: number = 0
 
   constructor(id: string, name: string, price: number, originalPrice: number,
-              description: string, detailDescription: string, images: Resource[],
-              category: string, tags: string[], rating: number, reviewCount: number, stock: number) {
+    description: string, detailDescription: string, images: ResourceStr[],
+    category: string, tags: string[], rating: number, reviewCount: number, stock: number) {
     this.id = id
     this.name = name
     this.price = price
@@ -28,8 +31,9 @@ export class ProductModel {
     this.description = description
     this.detailDescription = detailDescription
     this.images = images
-    this.image = images.length > 0 ? images[0] : $r('app.media.APP') // 默认使用第一张图作为主图
-    this.spec = '标准版' // 默认规格
+    // ✅ 逻辑优化：如果有图则取第一张，没图则给默认占位图
+    this.image = images.length > 0 ? images[0] : $r('app.media.APP')
+    this.spec = '标准版'
     this.category = category
     this.tags = tags
     this.rating = rating
@@ -41,6 +45,7 @@ export class ProductModel {
   }
 }
 
+// 2. Mock 数据生成 (Resource 类型会自动兼容 ResourceStr)
 export class MockData {
   static generateProducts(): ProductModel[] {
     return [

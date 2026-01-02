@@ -1,7 +1,7 @@
 import router from '@ohos.router'
 import { ProductModel, MockData } from '../model/ProductModel'
 import { CartService } from '../services/CartService'
-// import { CommentSectionNew } from '../components/CommentSectionNew' // 如果你删了这个文件，请注释掉，或换成 CommentSection
+// ✅ 如果暂时不用 CommentSection，请注释掉 import，否则会报"未使用"错误
 import { CommentSection } from '../components/CommentSection'
 
 @Entry
@@ -16,7 +16,7 @@ struct ProductDetailPage {
   @State scrollY: number = 0
   @State imageHeight: number = 375
 
-  // ✅ 获取单例
+  // 获取购物车服务单例
   private cartService: CartService = CartService.getInstance()
 
   aboutToAppear() {
@@ -24,13 +24,14 @@ struct ProductDetailPage {
   }
 
   private loadProductData() {
-    // 支持两种传参方式：直接传对象 或 传ID
+    // 获取路由参数
     const params = router.getParams() as Record<string, Object>
     if (params) {
       if (params['product']) {
+        // 如果传递了完整对象
         this.product = params['product'] as ProductModel
       } else if (params['productId']) {
-        // 如果只传了 ID，这里可以去 MockData 找 (或者去 DB 找，这里为了简单先去 MockData)
+        // 如果只传了 ID，去 MockData 查找
         const products = MockData.generateProducts()
         this.product = products.find(p => p.id === params['productId']) || null
       }
@@ -50,25 +51,17 @@ struct ProductDetailPage {
     }
   }
 
-  // ✅ 核心修改：调用 CartService 写库
   private async onAddToCart() {
     if (!this.product) return
 
-    // 调用 CartService
-    // 注意：CartService.addToCart 是异步的
+    // 调用 CartService 添加到购物车
     const success = await this.cartService.addToCart(this.product, this.quantity)
 
     if (success) {
       this.showCartSuccessDialog()
     } else {
-      // 这里的 false 可能是因为没登录，也可能是其他原因
-      // 简单起见，我们认为它是 "已存在" 或者是 "没登录"
-      // 如果你的 CartService 对于已存在是 update 数量并返回 true，那这里 false 就是没登录
-      // 如果 CartService 没登录会抛异常，那这里要 catch
-
-      // 假设 CartService 返回 false 代表失败
-      // 你可以加个判断是否登录
       console.error('添加失败，可能未登录')
+      // 这里可以加一个提示，比如弹窗提示去登录
     }
   }
 
@@ -78,15 +71,11 @@ struct ProductDetailPage {
 
   private goToCart(): void {
     this.showCartDialog = false
-    router.pushUrl({ url: 'pages/CartPage' }) // ✅ 修正跳转路径
+    router.pushUrl({ url: 'pages/CartPage' })
   }
 
   private continueShopping(): void {
     this.showCartDialog = false
-  }
-
-  private closeAlreadyInCartDialog(): void {
-    this.showAlreadyInCartDialog = false
   }
 
   private onBuyNow() {
@@ -175,8 +164,10 @@ struct ProductDetailPage {
               Text('商品详情').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ top: 20, bottom: 12 })
               Text(this.product?.detailDescription || '暂无详细描述').fontSize(14).lineHeight(24).width('100%')
 
-              // 评价区占位 (如果 CommentSection 可用请恢复)
-              // CommentSection({ productId: this.product?.id || '' })
+              // ✅ 恢复评论区组件 (已导入 CommentSection)
+              if (this.product) {
+                CommentSection({ productId: this.product.id })
+              }
 
               Column().height(100) // 底部垫高
             }
@@ -211,7 +202,7 @@ struct ProductDetailPage {
         .backgroundColor(Color.White).position({ x: 0, y: '100%' }).translate({ x: 0, y: -64 })
       }
 
-      // 弹窗逻辑 (保留你原本的)
+      // 弹窗逻辑
       if (this.showCartDialog) {
         Column() {
           Column().width('100%').height('100%').backgroundColor('rgba(0,0,0,0.5)').onClick(() => this.continueShopping())
