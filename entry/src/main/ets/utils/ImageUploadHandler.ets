@@ -1,123 +1,69 @@
-import common from '@ohos.app.ability.common'
-// import picker from '@ohos.multimedia.mediaLibrary'
+import common from '@ohos.app.ability.common';
+import picker from '@ohos.file.picker'; // ✅ 核心：引入文件选择器模块
 
 /**
- * 图片上传处理器
+ * 图片上传处理器 (已修复真实相册调用)
  */
 export class ImageUploadHandler {
-  private static instance: ImageUploadHandler
+  private static instance: ImageUploadHandler;
 
   private constructor() {}
 
   public static getInstance(): ImageUploadHandler {
     if (!ImageUploadHandler.instance) {
-      ImageUploadHandler.instance = new ImageUploadHandler()
+      ImageUploadHandler.instance = new ImageUploadHandler();
     }
-    return ImageUploadHandler.instance
+    return ImageUploadHandler.instance;
   }
 
   /**
-   * 选择单张图片
-   * @returns 图片URI
-   */
-  public async selectSingleImage(context: common.UIAbilityContext): Promise<string | null> {
-    try {
-      // HarmonyOS Next 实际实现需要使用新的API
-      // 这里暂时返回模拟图片URI
-      console.log('选择单张图片功能待实现')
-      return 'https://via.placeholder.com/300x300'
-
-      /*
-      const photoSelectOptions: PhotoSelectOptions = {
-        MIMEType: PhotoViewMIMETypes.IMAGE_TYPE,
-        maxSelectNumber: 1
-      }
-
-      const photoViewPicker = await getPhotoAccessHelper(context)
-      const photoSelectResult = await photoViewPicker.select(photoSelectOptions)
-
-      if (photoSelectResult && photoSelectResult.photoUris && photoSelectResult.photoUris.length > 0) {
-        return photoSelectResult.photoUris[0]
-      }
-
-      return null
-      */
-    } catch (error) {
-      console.error('选择图片失败:', error)
-      return null
-    }
-  }
-
-  /**
-   * 选择多张图片
+   * 选择多张图片 (调用系统相册)
+   * @param context 上下文
    * @param maxCount 最大选择数量
-   * @returns 图片URI数组
    */
   public async selectMultipleImages(context: common.UIAbilityContext, maxCount: number = 9): Promise<string[]> {
     try {
-      // HarmonyOS Next 实际实现需要使用新的API
-      // 这里暂时返回模拟图片URI数组
-      console.log('选择多张图片功能待实现')
-      return ['https://via.placeholder.com/300x300']
+      // 1. 创建图库选择选项
+      const photoSelectOptions = new picker.PhotoSelectOptions();
+      // 设置选择类型为图片
+      photoSelectOptions.MIMEType = picker.PhotoViewMIMETypes.IMAGE_TYPE;
+      // 设置最大选择数量
+      photoSelectOptions.maxSelectNumber = maxCount;
 
-      /*
-      const photoSelectOptions: PhotoSelectOptions = {
-        MIMEType: PhotoViewMIMETypes.IMAGE_TYPE,
-        maxSelectNumber: maxCount
+      // 2. 创建图库选择器实例
+      const photoViewPicker = new picker.PhotoViewPicker();
+
+      // 3. 拉起系统图库，用户选择图片
+      const photoSelectResult = await photoViewPicker.select(photoSelectOptions);
+
+      // 4. 处理返回结果
+      if (photoSelectResult && photoSelectResult.photoUris && photoSelectResult.photoUris.length > 0) {
+        // 返回真实的图片 URI 数组
+        return photoSelectResult.photoUris;
       }
 
-      const photoViewPicker = await getPhotoAccessHelper(context)
-      const photoSelectResult = await photoViewPicker.select(photoSelectOptions)
-
-      if (photoSelectResult && photoSelectResult.photoUris) {
-        return photoSelectResult.photoUris
-      }
-
-      return []
-      */
+      return [];
     } catch (error) {
-      console.error('选择多张图片失败:', error)
-      return []
+      console.error('ImageUploadHandler: 选择图片失败', JSON.stringify(error));
+      return [];
     }
   }
 
   /**
-   * 拍照
-   * @returns 图片URI
+   * 选择单张图片 (复用多选逻辑，限制数量为1)
+   */
+  public async selectSingleImage(context: common.UIAbilityContext): Promise<string | null> {
+    const uris = await this.selectMultipleImages(context, 1);
+    return uris.length > 0 ? uris[0] : null;
+  }
+
+  /**
+   * 拍照 (暂未实现，可留空或后续集成 CameraKit)
    */
   public async takePhoto(context: common.UIAbilityContext): Promise<string | null> {
-    // HarmonyOS Next 可能需要使用相机API
-    // 这里暂时返回null，实际使用时需要根据具体API实现
-    console.log('拍照功能待实现')
-    return null
-  }
-
-  /**
-   * 压缩图片
-   * @param imageUri 图片URI
-   * @param quality 压缩质量 0-100
-   * @param maxWidth 最大宽度
-   * @param maxHeight 最大高度
-   * @returns 压缩后的图片URI
-   */
-  public async compressImage(imageUri: string, quality: number = 80, maxWidth: number = 1920, maxHeight: number = 1080): Promise<string> {
-    // HarmonyOS Next 图片处理API
-    // 这里暂时返回原图URI
-    console.log('图片压缩功能待实现')
-    return imageUri
-  }
-
-  /**
-   * 创建图片缩略图
-   * @param imageUri 图片URI
-   * @param width 缩略图宽度
-   * @param height 缩略图高度
-   * @returns 缩略图URI
-   */
-  public async createThumbnail(imageUri: string, width: number = 200, height: number = 200): Promise<string> {
-    // HarmonyOS Next 缩略图生成API
-    // 这里暂时返回原图URI
-    console.log('缩略图生成功能待实现')
-    return imageUri
+    console.log('拍照功能待后续集成');
+    // 提示：实际上 PhotoViewPicker 界面里通常自带“拍照”按钮，
+    // 所以 selectMultipleImages 往往已经能满足基本的拍照上传需求。
+    return null;
   }
 }
